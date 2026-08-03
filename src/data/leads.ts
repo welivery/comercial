@@ -1,9 +1,13 @@
-// Adaptador del asistente de leads (IA). Interfaz + mock: hoy devuelve
-// sugerencias simuladas; en una etapa posterior se reemplaza por una Edge
-// Function que llama a la API de Claude cruzando la base de clientes + el
-// contexto del admin con fuentes públicas (Google Maps, sitios, redes).
-// La key vive del lado servidor, nunca en el cliente.
+// Adaptador del asistente de leads (IA).
+//
+// La generación real corre en la Edge Function `leads-ia`, que llama a la API de
+// Claude cruzando la base de clientes + el contexto del admin + el objetivo y el
+// pipeline del vendedor. La key vive del lado servidor, nunca en el cliente.
+//
+// Si la función todavía no está deployada (o falla), caemos al mock para que la
+// pantalla siga siendo demostrable. `usandoMock` avisa a la UI.
 
+import { supabase } from "@/lib/supabase"
 import type { Bucket } from "@/lib/types"
 
 export interface FuenteLead {
@@ -29,15 +33,34 @@ export interface IdeaConversacion {
   angulos: { titulo: string; texto: string }[]
 }
 
-export interface LeadsAdapter {
-  sugerir(vendedorId: string): Promise<LeadSugerido[]>
-  ideas(vendedorId: string): Promise<IdeaConversacion[]>
+export interface ResultadoLeads {
+  sugeridos: LeadSugerido[]
+  ideas: IdeaConversacion[]
+  usandoMock: boolean // true si la IA no está disponible y mostramos el demo
 }
 
-// Implementación mock — determinística por vendedor.
-export const leadsMock: LeadsAdapter = {
-  async sugerir() {
-    return [
+// Llama a la Edge Function; ante cualquier fallo cae al mock (con aviso).
+export async function generarLeads(vendedorId: string): Promise<ResultadoLeads> {
+  try {
+    const { data, error } = await supabase.functions.invoke("leads-ia", {
+      body: { vendedorId },
+    })
+    if (error) throw error
+    if (!data || !Array.isArray(data.sugeridos)) throw new Error("Respuesta inesperada")
+    return {
+      sugeridos: data.sugeridos as LeadSugerido[],
+      ideas: (data.ideas ?? []) as IdeaConversacion[],
+      usandoMock: false,
+    }
+  } catch {
+    return { ...leadsMockData(), usandoMock: true }
+  }
+}
+
+// ─────────────────────────── Mock (demo / fallback) ───────────────────────────
+function leadsMockData(): { sugeridos: LeadSugerido[]; ideas: IdeaConversacion[] } {
+  return {
+    sugeridos: [
       {
         id: "lead-runa",
         nombre: "Runa Andina",
@@ -81,10 +104,8 @@ export const leadsMock: LeadsAdapter = {
           { tipo: "tendencia", detalle: "+40% tráfico web (6 meses)" },
         ],
       },
-    ]
-  },
-  async ideas() {
-    return [
+    ],
+    ideas: [
       {
         oportunidad: "Ruca Outdoor",
         bucket: "estrategico",
@@ -105,8 +126,6 @@ export const leadsMock: LeadsAdapter = {
           { titulo: "Mensaje listo", texto: "\"¡Hola! ¿Pudieron revisar la propuesta? Puedo dejarles una prueba acotada esta semana así lo ven en la práctica.\"" },
         ],
       },
-    ]
-  },
+    ],
+  }
 }
-
-export const leads: LeadsAdapter = leadsMock

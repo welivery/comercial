@@ -29,3 +29,33 @@ de Functions.
 > **sin contraseña** (solo ficha) y el **auto-registro** desde el login andan sin
 > la función. La función habilita crear usuarios **con acceso directo** y borrar
 > cuentas desde la app.
+
+## `leads-ia`
+
+Asistente de **prospección con IA** de la vista Vendedor (pantalla "Buscar
+leads"). Cruza la base de clientes (activos, ex-clientes, prospección), el
+contexto que carga el admin en Configuración, y el objetivo + pipeline del
+vendedor, y le pide a la **API de Claude** que sugiera nuevos e-commerces a
+prospectar (priorizando el bucket que le falta) e ideas de conversación.
+
+La **API key de Anthropic vive del lado servidor** (secret `ANTHROPIC_API_KEY`),
+nunca en el cliente.
+
+Request (POST, body JSON): `{ vendedorId }`.
+Response: `{ sugeridos: LeadSugerido[], ideas: IdeaConversacion[] }`.
+
+### Deploy (una vez)
+
+```bash
+supabase link --project-ref ykqathdxfpdweftoceke
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...   # tu key de Anthropic
+supabase functions deploy leads-ia
+```
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` los inyecta
+Supabase automáticamente.
+
+> Mientras la función no esté deployada (o falte la key), la pantalla "Buscar
+> leads" muestra **sugerencias de demostración** con un aviso, así sigue siendo
+> demostrable. Al deployar la función + cargar la key, pasa a leads reales sin
+> tocar nada más en el cliente.
