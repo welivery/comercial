@@ -225,6 +225,30 @@ export async function fetchClientes(): Promise<Cliente[]> {
   return check(data, error).map(mapCliente)
 }
 
+// ─────────────────────────────── Clientes (CRUD) ───────────────────────────────
+export interface ClienteInput {
+  nombre: string
+  segmento: SegmentoCliente
+  envios_mes: number
+  bucket: Bucket
+  vendedor_id: string | null
+  motivo_baja: MotivoBaja | null
+  nota: string
+}
+
+export async function crearCliente(c: ClienteInput): Promise<void> {
+  const { error } = await supabase.from("clientes").insert(c)
+  if (error) throw new Error(error.message)
+}
+export async function actualizarCliente(id: string, patch: Partial<ClienteInput>): Promise<void> {
+  const { error } = await supabase.from("clientes").update(patch).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+export async function eliminarCliente(id: string): Promise<void> {
+  const { error } = await supabase.from("clientes").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
 // Ensambla el contexto IA de sus 4 tablas.
 export async function fetchContexto(): Promise<ContextoIA> {
   const [gen, fuentes, reglas, porVend] = await Promise.all([

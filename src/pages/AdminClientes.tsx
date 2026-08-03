@@ -1,13 +1,21 @@
 import { useMemo, useState } from "react"
-import { Plus, Sparkles, Upload } from "lucide-react"
+import { Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
+import { Modal } from "@/components/Modal"
 import { BucketChip, Cargando, ErrorMsg, SegmentoBadge } from "@/components/widgets"
 import { useClientes, useContexto, useVendedores } from "@/hooks/useData"
-import { MOTIVO_BAJA_LABEL, fmtEnvios, iniciales } from "@/lib/display"
+import {
+  actualizarCliente,
+  crearCliente,
+  eliminarCliente,
+  type ClienteInput,
+} from "@/data/api"
+import { BUCKETS, BUCKET_LABEL } from "@/lib/buckets"
+import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, iniciales } from "@/lib/display"
 import { cn } from "@/lib/utils"
-import type { MotivoBaja, SegmentoCliente } from "@/lib/types"
+import type { Cliente, MotivoBaja, SegmentoCliente } from "@/lib/types"
 
 const MOTIVO_COLOR: Record<MotivoBaja, string> = {
   precio: "#F2563A",
@@ -16,16 +24,34 @@ const MOTIVO_COLOR: Record<MotivoBaja, string> = {
   deuda: "#DB3B3B",
   otro: "#7A869C",
 }
+const SEGMENTOS: SegmentoCliente[] = ["activo", "ex_cliente", "prospeccion"]
+const MOTIVOS: MotivoBaja[] = ["precio", "servicio", "cerro", "deuda", "otro"]
 
 type Filtro = "todos" | SegmentoCliente
 
+const VACIO: ClienteInput = {
+  nombre: "",
+  segmento: "activo",
+  envios_mes: 0,
+  bucket: "mediano",
+  vendedor_id: null,
+  motivo_baja: null,
+  nota: "",
+}
+
 export function AdminClientes() {
   const [filtro, setFiltro] = useState<Filtro>("todos")
-  const { data: clientes, loading, error } = useClientes()
+  const { data: clientes, loading, error, reload } = useClientes()
   const { data: vendedores } = useVendedores()
   const { data: contexto } = useContexto()
   const CLIENTES = clientes ?? []
   const vends = vendedores ?? []
+
+  const [abierto, setAbierto] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState<ClienteInput>(VACIO)
+  const [guardando, setGuardando] = useState(false)
+  const [errForm, setErrForm] = useState<string | null>(null)
 
   const counts = useMemo(() => {
     const c = { activo: 0, ex_cliente: 0, prospeccion: 0 } as Record<SegmentoCliente, number>
@@ -43,16 +69,63 @@ export function AdminClientes() {
     { key: "prospeccion", label: "Prospección", n: counts.prospeccion, dot: "#2F5BE6" },
   ]
 
+  function abrirNuevo() {
+    setEditId(null)
+    setForm(VACIO)
+    setErrForm(null)
+    setAbierto(true)
+  }
+  function abrirEditar(c: Cliente) {
+    setEditId(c.id)
+    setForm({
+      nombre: c.nombre,
+      segmento: c.segmento,
+      envios_mes: c.envios_mes,
+      bucket: c.bucket,
+      vendedor_id: c.vendedor_id,
+      motivo_baja: c.motivo_baja,
+      nota: c.nota,
+    })
+    setErrForm(null)
+    setAbierto(true)
+  }
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault()
+    setGuardando(true)
+    setErrForm(null)
+    // El motivo de baja solo aplica a ex-clientes.
+    const payload: ClienteInput = { ...form, motivo_baja: form.segmento === "ex_cliente" ? form.motivo_baja : null }
+    try {
+      if (editId) await actualizarCliente(editId, payload)
+      else await crearCliente(payload)
+      setAbierto(false)
+      reload()
+    } catch (err) {
+      setErrForm(err instanceof Error ? err.message : "No se pudo guardar")
+    } finally {
+      setGuardando(false)
+    }
+  }
+  async function borrar(c: Cliente) {
+    if (!window.confirm(`¿Eliminar a ${c.nombre} de la base?`)) return
+    try {
+      await eliminarCliente(c.id)
+      reload()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar")
+    }
+  }
+
   if (loading) return <Cargando que="la base de clientes" />
   if (error) return <ErrorMsg msg={error} />
 
   return (
     <>
       <PageHead titulo="Base de clientes" descripcion="Clientes, bajas y prospección · alimenta al asistente de leads">
-        <Button variant="outline">
+        <Button variant="outline" disabled title="Próximamente">
           <Upload /> Importar CSV
         </Button>
-        <Button variant="blue">
+        <Button variant="blue" onClick={abrirNuevo}>
           <Plus /> Agregar cliente
         </Button>
       </PageHead>
@@ -113,11 +186,12 @@ export function AdminClientes() {
               <th className="px-4 py-2.5 font-medium">Tipo</th>
               <th className="px-4 py-2.5 font-medium">Vendedor</th>
               <th className="px-4 py-2.5 font-medium">Motivo / nota</th>
+              <th className="px-4 py-2.5" />
             </tr>
           </thead>
           <tbody>
-            {filtrados.map((c, idx) => (
-              <tr key={c.id + idx} className="border-t border-border hover:bg-mist/60">
+            {filtrados.map((c) => (
+              <tr key={c.id} className="border-t border-border hover:bg-mist/60">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
                     <span className="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-mist text-[11px] font-semibold text-navy">
@@ -145,8 +219,33 @@ export function AdminClientes() {
                   )}
                   {c.nota}
                 </td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      onClick={() => abrirEditar(c)}
+                      className="grid size-8 place-items-center rounded-md text-slate hover:bg-mist"
+                      title="Editar"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      onClick={() => borrar(c)}
+                      className="grid size-8 place-items-center rounded-md text-slate hover:bg-[#FBE2E2] hover:text-error"
+                      title="Eliminar"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
+            {filtrados.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-8 text-center text-[13px] text-slate">
+                  No hay clientes en este segmento.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </Card>
@@ -160,6 +259,119 @@ export function AdminClientes() {
           <b className="font-semibold text-ink">Contexto IA</b>.
         </p>
       </div>
+
+      <Modal open={abierto} onClose={() => setAbierto(false)} title={editId ? "Editar cliente" : "Nuevo cliente"}>
+        <form onSubmit={guardar} className="flex flex-col gap-3.5">
+          <Campo label="Empresa">
+            <input
+              value={form.nombre}
+              onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+              className="inp"
+              placeholder="Nombre del e-commerce"
+              required
+            />
+          </Campo>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Segmento">
+              <select
+                value={form.segmento}
+                onChange={(e) => setForm({ ...form, segmento: e.target.value as SegmentoCliente })}
+                className="inp"
+              >
+                {SEGMENTOS.map((s) => (
+                  <option key={s} value={s}>
+                    {SEGMENTO_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+            <Campo label="Envíos/mes">
+              <input
+                type="number"
+                min={0}
+                value={form.envios_mes}
+                onChange={(e) => setForm({ ...form, envios_mes: Number(e.target.value) })}
+                className="inp"
+              />
+            </Campo>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Tipo (bucket)">
+              <select
+                value={form.bucket}
+                onChange={(e) => setForm({ ...form, bucket: e.target.value as ClienteInput["bucket"] })}
+                className="inp"
+              >
+                {BUCKETS.map((b) => (
+                  <option key={b} value={b}>
+                    {BUCKET_LABEL[b]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+            <Campo label="Vendedor">
+              <select
+                value={form.vendedor_id ?? ""}
+                onChange={(e) => setForm({ ...form, vendedor_id: e.target.value || null })}
+                className="inp"
+              >
+                <option value="">Sin asignar</option>
+                {vends.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.nombre}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          </div>
+          {form.segmento === "ex_cliente" && (
+            <Campo label="Motivo de baja">
+              <select
+                value={form.motivo_baja ?? ""}
+                onChange={(e) => setForm({ ...form, motivo_baja: (e.target.value || null) as MotivoBaja | null })}
+                className="inp"
+              >
+                <option value="">—</option>
+                {MOTIVOS.map((m) => (
+                  <option key={m} value={m}>
+                    {MOTIVO_BAJA_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+            </Campo>
+          )}
+          <Campo label="Nota">
+            <input
+              value={form.nota}
+              onChange={(e) => setForm({ ...form, nota: e.target.value })}
+              className="inp"
+              placeholder="Contexto útil (ej: desde 2024, muy conforme)"
+            />
+          </Campo>
+
+          {errForm && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{errForm}</div>}
+
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setAbierto(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="blue" disabled={guardando}>
+              {guardando ? "Guardando…" : editId ? "Guardar" : "Crear"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>
     </>
+  )
+}
+
+function Campo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[12px] font-medium text-slate">{label}</span>
+      {children}
+    </label>
   )
 }
