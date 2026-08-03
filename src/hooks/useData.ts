@@ -9,6 +9,7 @@ import {
   fetchObjetivos,
   fetchOportunidad,
   fetchOportunidades,
+  fetchUsuarios,
   fetchVendedores,
 } from "@/data/api"
 
@@ -45,6 +46,7 @@ function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> {
 }
 
 export const useVendedores = () => useAsync(() => fetchVendedores(), [])
+export const useUsuarios = () => useAsync(() => fetchUsuarios(), [])
 export const useObjetivos = (periodo: string) => useAsync(() => fetchObjetivos(periodo), [periodo])
 export const useOportunidades = (vendedorId?: string) =>
   useAsync(() => fetchOportunidades(vendedorId), [vendedorId])

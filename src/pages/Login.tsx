@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button"
 import { useVentas } from "@/store"
 
 export function Login() {
-  const { session, signIn } = useVentas()
+  const { session, signIn, signUp } = useVentas()
   const navigate = useNavigate()
+  const [modo, setModo] = useState<"login" | "signup">("login")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
 
   // Si ya hay sesión, salir del login.
@@ -20,11 +22,20 @@ export function Login() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setAviso(null)
     setEnviando(true)
-    const { error } = await signIn(email.trim(), password)
-    setEnviando(false)
-    if (error) setError("Email o contraseña incorrectos.")
-    else navigate("/", { replace: true })
+    if (modo === "login") {
+      const { error } = await signIn(email.trim(), password)
+      setEnviando(false)
+      if (error) setError("Email o contraseña incorrectos.")
+      else navigate("/", { replace: true })
+    } else {
+      const { error, necesitaConfirmar } = await signUp(email.trim(), password)
+      setEnviando(false)
+      if (error) setError(error)
+      else if (necesitaConfirmar) setAviso("¡Listo! Revisá tu email para confirmar la cuenta y después ingresá.")
+      else navigate("/", { replace: true })
+    }
   }
 
   return (
@@ -40,7 +51,9 @@ export function Login() {
         </div>
 
         <div className="rounded-xl border border-border bg-white p-6 shadow-[var(--shadow-card)]">
-          <h1 className="text-[15px] font-semibold text-navy">Ingresá a tu cuenta</h1>
+          <h1 className="text-[15px] font-semibold text-navy">
+            {modo === "login" ? "Ingresá a tu cuenta" : "Creá tu cuenta"}
+          </h1>
           <p className="mt-0.5 text-[12.5px] text-slate">Seguimiento comercial · Chile</p>
 
           <form onSubmit={onSubmit} className="mt-5 flex flex-col gap-3.5">
@@ -63,7 +76,7 @@ export function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
+                autoComplete={modo === "login" ? "current-password" : "new-password"}
                 className="rounded-lg border border-input bg-white px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
                 placeholder="••••••••"
               />
@@ -72,11 +85,54 @@ export function Login() {
             {error && (
               <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{error}</div>
             )}
+            {aviso && (
+              <div className="rounded-lg bg-[#DFF2E9] px-3 py-2 text-[12.5px] text-success">{aviso}</div>
+            )}
 
             <Button type="submit" disabled={enviando} className="mt-1 w-full">
-              {enviando ? "Ingresando…" : "Ingresar"}
+              {enviando
+                ? modo === "login"
+                  ? "Ingresando…"
+                  : "Creando…"
+                : modo === "login"
+                  ? "Ingresar"
+                  : "Crear cuenta"}
             </Button>
           </form>
+
+          <div className="mt-4 border-t border-border pt-3 text-center text-[12px] text-slate">
+            {modo === "login" ? (
+              <>
+                ¿Primera vez?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModo("signup")
+                    setError(null)
+                    setAviso(null)
+                  }}
+                  className="font-medium text-blue hover:underline"
+                >
+                  Creá tu cuenta
+                </button>
+              </>
+            ) : (
+              <>
+                ¿Ya tenés cuenta?{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModo("login")
+                    setError(null)
+                    setAviso(null)
+                  }}
+                  className="font-medium text-blue hover:underline"
+                >
+                  Ingresá
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         <p className="mt-4 text-center text-[11.5px] text-muted">

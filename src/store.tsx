@@ -32,6 +32,7 @@ interface VentasState {
   verVendedorId: string | null
   setVerVendedorId: (id: string) => void
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
+  signUp: (email: string, password: string) => Promise<{ error: string | null; necesitaConfirmar: boolean }>
   signOut: () => Promise<void>
 }
 
@@ -107,6 +108,11 @@ export function VentasProvider({ children }: { children: ReactNode }) {
     async signIn(email, password) {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       return { error: error?.message ?? null }
+    },
+    async signUp(email, password) {
+      const { data, error } = await supabase.auth.signUp({ email, password })
+      // Si la confirmación por email está activada, no hay sesión hasta confirmar.
+      return { error: error?.message ?? null, necesitaConfirmar: !error && !data.session }
     },
     async signOut() {
       await supabase.auth.signOut()

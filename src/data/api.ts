@@ -109,6 +109,48 @@ export async function fetchVendedores(): Promise<VendedorRow[]> {
   return check(data, error).map(mapVendedor)
 }
 
+// Todos los usuarios (admins + vendedores) — para la gestión del admin.
+export async function fetchUsuarios(): Promise<VendedorRow[]> {
+  const { data, error } = await supabase
+    .from("vendedores")
+    .select("*")
+    .order("rol")
+    .order("nombre")
+  return check(data, error).map(mapVendedor)
+}
+
+export interface NuevoUsuario {
+  nombre: string
+  email: string
+  zona: string
+  rol: "admin" | "vendedor"
+}
+
+// Crea la FICHA del usuario (sin cuenta de login todavía). La cuenta se enlaza
+// cuando la persona se registra con ese email (trigger link_vendedor_on_signup).
+export async function crearUsuario(u: NuevoUsuario): Promise<void> {
+  const { error } = await supabase.from("vendedores").insert({
+    nombre: u.nombre,
+    email: u.email,
+    zona: u.zona,
+    rol: u.rol,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function actualizarUsuario(
+  id: string,
+  patch: Partial<{ nombre: string; zona: string; rol: "admin" | "vendedor"; activo: boolean }>
+): Promise<void> {
+  const { error } = await supabase.from("vendedores").update(patch).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function eliminarUsuario(id: string): Promise<void> {
+  const { error } = await supabase.from("vendedores").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
 // Ficha del vendedor enlazada al usuario logueado (para auth/rol).
 export async function fetchVendedorByUser(userId: string): Promise<VendedorRow | null> {
   const { data, error } = await supabase

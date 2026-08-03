@@ -5,6 +5,7 @@ import { Login } from "@/pages/Login"
 import { AdminDashboard } from "@/pages/AdminDashboard"
 import { AdminObjetivos } from "@/pages/AdminObjetivos"
 import { AdminVendedores } from "@/pages/AdminVendedores"
+import { AdminUsuarios } from "@/pages/AdminUsuarios"
 import { AdminClientes } from "@/pages/AdminClientes"
 import { AdminContexto } from "@/pages/AdminContexto"
 import { VendedorAvance } from "@/pages/VendedorAvance"
@@ -40,6 +41,7 @@ export function VentasApp() {
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="objetivos" element={<AdminObjetivos />} />
             <Route path="vendedores" element={<AdminVendedores />} />
+            <Route path="usuarios" element={<AdminUsuarios />} />
             <Route path="clientes" element={<AdminClientes />} />
             <Route path="contexto" element={<AdminContexto />} />
             <Route path="avance" element={<VendedorAvance />} />
