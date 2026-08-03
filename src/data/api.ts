@@ -151,6 +151,37 @@ export async function eliminarUsuario(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+// Extrae el mensaje de error de una Edge Function (cuerpo JSON si lo hay).
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function fnMsg(error: any): Promise<string> {
+  try {
+    if (error?.context && typeof error.context.json === "function") {
+      const b = await error.context.json()
+      if (b?.error) return b.error
+    }
+  } catch {
+    /* ignore */
+  }
+  return error?.message ?? "Error en la función"
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// Crea la CUENTA de acceso (auth) + ficha, vía Edge Function (service_role).
+export async function crearUsuarioConAcceso(p: NuevoUsuario & { password: string }): Promise<void> {
+  const { error } = await supabase.functions.invoke("usuarios", {
+    body: { action: "crear", ...p },
+  })
+  if (error) throw new Error(await fnMsg(error))
+}
+
+// Elimina la cuenta de acceso (auth) y la ficha, vía Edge Function.
+export async function eliminarCuenta(userId: string, vendedorId: string): Promise<void> {
+  const { error } = await supabase.functions.invoke("usuarios", {
+    body: { action: "eliminar", user_id: userId, vendedor_id: vendedorId },
+  })
+  if (error) throw new Error(await fnMsg(error))
+}
+
 // Ficha del vendedor enlazada al usuario logueado (para auth/rol).
 export async function fetchVendedorByUser(userId: string): Promise<VendedorRow | null> {
   const { data, error } = await supabase

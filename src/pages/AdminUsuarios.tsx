@@ -9,6 +9,8 @@ import { useUsuarios } from "@/hooks/useData"
 import {
   actualizarUsuario,
   crearUsuario,
+  crearUsuarioConAcceso,
+  eliminarCuenta,
   eliminarUsuario,
   type VendedorRow,
 } from "@/data/api"
@@ -21,8 +23,9 @@ interface FormState {
   email: string
   zona: string
   rol: RolV
+  password: string
 }
-const VACIO: FormState = { nombre: "", email: "", zona: "", rol: "vendedor" }
+const VACIO: FormState = { nombre: "", email: "", zona: "", rol: "vendedor", password: "" }
 
 export function AdminUsuarios() {
   const { usuario } = useVentas()
@@ -43,7 +46,7 @@ export function AdminUsuarios() {
   }
   function abrirEditar(u: VendedorRow) {
     setEditId(u.id)
-    setForm({ nombre: u.nombre, email: u.email, zona: u.zona, rol: u.rol })
+    setForm({ nombre: u.nombre, email: u.email, zona: u.zona, rol: u.rol, password: "" })
     setErrForm(null)
     setAbierto(true)
   }
@@ -55,8 +58,18 @@ export function AdminUsuarios() {
     try {
       if (editId) {
         await actualizarUsuario(editId, { nombre: form.nombre, zona: form.zona, rol: form.rol })
+      } else if (form.password.trim()) {
+        // Con contraseña → crea la cuenta de acceso (Edge Function).
+        await crearUsuarioConAcceso({
+          email: form.email,
+          nombre: form.nombre,
+          zona: form.zona,
+          rol: form.rol,
+          password: form.password.trim(),
+        })
       } else {
-        await crearUsuario(form)
+        // Sin contraseña → solo la ficha (la persona se registra después).
+        await crearUsuario({ email: form.email, nombre: form.nombre, zona: form.zona, rol: form.rol })
       }
       setAbierto(false)
       reload()
@@ -73,10 +86,18 @@ export function AdminUsuarios() {
   }
 
   async function borrar(u: VendedorRow) {
-    if (!window.confirm(`¿Eliminar el registro de ${u.nombre || u.email}? Esto no borra su cuenta de acceso.`))
-      return
-    await eliminarUsuario(u.id)
-    reload()
+    const conAcceso = !!u.user_id
+    const msg = conAcceso
+      ? `¿Eliminar a ${u.nombre || u.email}? Se borra también su cuenta de acceso.`
+      : `¿Eliminar el registro de ${u.nombre || u.email}?`
+    if (!window.confirm(msg)) return
+    try {
+      if (conAcceso) await eliminarCuenta(u.user_id as string, u.id)
+      else await eliminarUsuario(u.id)
+      reload()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo eliminar")
+    }
   }
 
   if (loading) return <Cargando que="los usuarios" />
@@ -229,6 +250,24 @@ export function AdminUsuarios() {
               <option value="admin">Admin</option>
             </select>
           </Campo>
+
+          {!editId && (
+            <Campo label="Contraseña (opcional)">
+              <input
+                type="text"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className="inp"
+                placeholder="Dejá vacío para que se registre solo/a"
+                minLength={6}
+                autoComplete="off"
+              />
+              <span className="text-[11px] text-muted">
+                Con contraseña le creás el acceso directo. Vacío = solo la ficha; la persona se registra
+                con su email desde el login.
+              </span>
+            </Campo>
+          )}
 
           {errForm && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{errForm}</div>}
 
