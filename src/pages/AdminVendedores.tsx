@@ -1,5 +1,6 @@
 import { useMemo } from "react"
-import { TrendingUp, UserPlus, Users } from "lucide-react"
+import { Link } from "react-router-dom"
+import { Settings2, TrendingUp, UserPlus, Users } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
@@ -85,8 +86,15 @@ export function AdminVendedores() {
   return (
     <>
       <PageHead titulo="Vendedores" descripcion="Detalle mensual del equipo">
-        <Button variant="default">
-          <UserPlus /> Agregar vendedor
+        <Button asChild variant="outline">
+          <Link to="/usuarios">
+            <Settings2 /> Gestionar usuarios
+          </Link>
+        </Button>
+        <Button asChild variant="default">
+          <Link to="/usuarios">
+            <UserPlus /> Agregar vendedor
+          </Link>
         </Button>
       </PageHead>
 
