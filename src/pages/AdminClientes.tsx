@@ -3,8 +3,8 @@ import { Plus, Sparkles, Upload } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
-import { BucketChip, SegmentoBadge } from "@/components/widgets"
-import { CLIENTES, CONTEXTO_IA, VENDEDORES } from "@/data/mock"
+import { BucketChip, Cargando, ErrorMsg, SegmentoBadge } from "@/components/widgets"
+import { useClientes, useContexto, useVendedores } from "@/hooks/useData"
 import { MOTIVO_BAJA_LABEL, fmtEnvios, iniciales } from "@/lib/display"
 import { cn } from "@/lib/utils"
 import type { MotivoBaja, SegmentoCliente } from "@/lib/types"
@@ -21,15 +21,20 @@ type Filtro = "todos" | SegmentoCliente
 
 export function AdminClientes() {
   const [filtro, setFiltro] = useState<Filtro>("todos")
+  const { data: clientes, loading, error } = useClientes()
+  const { data: vendedores } = useVendedores()
+  const { data: contexto } = useContexto()
+  const CLIENTES = clientes ?? []
+  const vends = vendedores ?? []
 
   const counts = useMemo(() => {
     const c = { activo: 0, ex_cliente: 0, prospeccion: 0 } as Record<SegmentoCliente, number>
     for (const cl of CLIENTES) c[cl.segmento]++
     return c
-  }, [])
+  }, [CLIENTES])
 
   const filtrados = filtro === "todos" ? CLIENTES : CLIENTES.filter((c) => c.segmento === filtro)
-  const nombreVendedor = (id: string | null) => VENDEDORES.find((v) => v.id === id)?.nombre.split(" ")[0]
+  const nombreVendedor = (id: string | null) => vends.find((v) => v.id === id)?.nombre.split(" ")[0]
 
   const chips: { key: Filtro; label: string; n: number; dot?: string }[] = [
     { key: "todos", label: "Todos", n: CLIENTES.length },
@@ -37,6 +42,9 @@ export function AdminClientes() {
     { key: "ex_cliente", label: "Ex-clientes", n: counts.ex_cliente, dot: "#F2563A" },
     { key: "prospeccion", label: "Prospección", n: counts.prospeccion, dot: "#2F5BE6" },
   ]
+
+  if (loading) return <Cargando que="la base de clientes" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>
@@ -74,7 +82,7 @@ export function AdminClientes() {
             <Sparkles size={14} className="text-mint" /> Contexto IA
           </div>
           <div className="mt-2 text-[16px] font-semibold leading-none text-success">Actualizado</div>
-          <div className="mt-1.5 text-[11.5px] text-slate">{CONTEXTO_IA.actualizado_at}</div>
+          <div className="mt-1.5 text-[11.5px] text-slate">{contexto?.actualizado_at ?? "—"}</div>
         </Card>
       </div>
 

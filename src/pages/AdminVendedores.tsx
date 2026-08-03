@@ -4,8 +4,8 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
-import { Progress, SectionTitle, VAvatar } from "@/components/widgets"
-import { OBJETIVOS, OPORTUNIDADES, VENDEDORES } from "@/data/mock"
+import { Cargando, ErrorMsg, Progress, SectionTitle, VAvatar } from "@/components/widgets"
+import { useObjetivos, useOportunidades, useVendedores } from "@/hooks/useData"
 import { avanceVendedor, type AvanceVendedor } from "@/lib/metrics"
 import { PERIODO_ACTUAL } from "@/lib/display"
 import type { Vendedor } from "@/lib/types"
@@ -54,22 +54,33 @@ function GoalRow({
 }
 
 export function AdminVendedores() {
+  const { data: vendedores, loading, error } = useVendedores()
+  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
+  const { data: oportunidades } = useOportunidades()
+  const ops = oportunidades ?? []
+  const objs = objetivos ?? []
+
   const filas: Fila[] = useMemo(
     () =>
-      VENDEDORES.map((v) => {
-        const ops = OPORTUNIDADES.filter((o) => o.vendedor_id === v.id)
-        const obj = OBJETIVOS.find((o) => o.vendedor_id === v.id)
-        const av = avanceVendedor(ops, obj, PERIODO_ACTUAL)
+      (vendedores ?? []).map((v) => {
+        const vops = ops.filter((o) => o.vendedor_id === v.id)
+        const obj = objs.find((o) => o.vendedor_id === v.id)
+        const av = avanceVendedor(vops, obj, PERIODO_ACTUAL)
         const estr = av.mix.find((m) => m.bucket === "estrategico")
         const enRiesgo = av.pctObjetivo < 80 || (estr ? estr.pct < estr.objetivoPct - 8 : false)
         return { v, av, enRiesgo }
       }),
-    []
+    [vendedores, ops, objs]
   )
 
   const mejor = [...filas].sort((a, b) => b.av.pctObjetivo - a.av.pctObjetivo)[0]
   const enRiesgo = filas.filter((f) => f.enRiesgo).length
-  const cierrePromedio = Math.round(filas.reduce((a, f) => a + f.av.tasaCierre, 0) / filas.length)
+  const cierrePromedio = filas.length
+    ? Math.round(filas.reduce((a, f) => a + f.av.tasaCierre, 0) / filas.length)
+    : 0
+
+  if (loading) return <Cargando que="el equipo" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>
@@ -80,12 +91,12 @@ export function AdminVendedores() {
       </PageHead>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Equipo" valor={VENDEDORES.length} icon={<Users size={14} />} sub="vendedores activos" />
+        <StatTile label="Equipo" valor={filas.length} icon={<Users size={14} />} sub="vendedores activos" />
         <StatTile
           label="Mejor avance"
-          valor={<span className="text-[18px]">{mejor.v.nombre.split(" ")[0]}</span>}
+          valor={<span className="text-[18px]">{mejor ? mejor.v.nombre.split(" ")[0] : "—"}</span>}
           color="#1E9E6A"
-          sub={`${mejor.av.pctObjetivo}% del objetivo`}
+          sub={mejor ? `${mejor.av.pctObjetivo}% del objetivo` : "sin datos"}
           subTono="up"
         />
         <StatTile

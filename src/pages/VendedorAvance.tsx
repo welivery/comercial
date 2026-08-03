@@ -3,9 +3,9 @@ import { Clock, Columns3, TriangleAlert, TrendingUp, Users } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { PageHead, MonthPill } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
-import { Progress } from "@/components/widgets"
+import { Cargando, ErrorMsg, Progress } from "@/components/widgets"
 import { useVentas } from "@/store"
-import { OBJETIVOS, OPORTUNIDADES } from "@/data/mock"
+import { useObjetivos, useOportunidades } from "@/hooks/useData"
 import { avanceVendedor } from "@/lib/metrics"
 import { BUCKET_COLOR, BUCKET_LABEL } from "@/lib/buckets"
 import { HOY, PERIODO_ACTUAL } from "@/lib/display"
@@ -18,11 +18,13 @@ const SUBTITULO_BUCKET: Record<string, string> = {
 
 export function VendedorAvance() {
   const { vendedor } = useVentas()
+  const { data: oportunidades, loading, error } = useOportunidades(vendedor.id)
+  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const av = useMemo(() => {
-    const ops = OPORTUNIDADES.filter((o) => o.vendedor_id === vendedor.id)
-    const obj = OBJETIVOS.find((o) => o.vendedor_id === vendedor.id)
+    const ops = oportunidades ?? []
+    const obj = (objetivos ?? []).find((o) => o.vendedor_id === vendedor.id)
     return avanceVendedor(ops, obj, PERIODO_ACTUAL)
-  }, [vendedor.id])
+  }, [oportunidades, objetivos, vendedor.id])
 
   // Días hábiles restantes (aprox): hasta fin de mes.
   const finMes = new Date(HOY.getFullYear(), HOY.getMonth() + 1, 0)
@@ -30,6 +32,9 @@ export function VendedorAvance() {
 
   const estr = av.mix.find((m) => m.bucket === "estrategico")
   const faltaEstr = estr ? Math.max(0, Math.ceil(((estr.objetivoPct - estr.pct) / 100) * av.objetivo)) : 0
+
+  if (loading) return <Cargando que="tu avance" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>

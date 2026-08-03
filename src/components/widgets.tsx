@@ -118,6 +118,24 @@ export function MixBar({ mix, className }: { mix: MixDetalle[]; className?: stri
   )
 }
 
+// Estado de carga a pantalla (mientras llegan los datos de Supabase).
+export function Cargando({ que = "datos" }: { que?: string }) {
+  return (
+    <div className="grid min-h-[40vh] place-items-center text-[13px] text-slate">
+      Cargando {que}…
+    </div>
+  )
+}
+
+// Estado de error simple.
+export function ErrorMsg({ msg }: { msg: string }) {
+  return (
+    <div className="mt-4 rounded-xl border border-error/30 bg-[#FBE2E2] p-4 text-[13px] text-error">
+      No se pudieron cargar los datos: {msg}
+    </div>
+  )
+}
+
 // Título de sección con hint y acciones a la derecha.
 export function SectionTitle({
   titulo,

@@ -16,15 +16,12 @@ import { Simbolo } from "@/components/brand/Simbolo"
 import { useTheme } from "@/hooks/useTheme"
 import { cn } from "@/lib/utils"
 import { useVentas } from "@/store"
-import { OPORTUNIDADES } from "@/data/mock"
-import { esActiva } from "@/lib/metrics"
 import type { RolVentas } from "@/lib/types"
 
 interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
-  badge?: number
 }
 
 const NAV_ADMIN: NavItem[] = [
@@ -36,30 +33,36 @@ const NAV_ADMIN_DATOS: NavItem[] = [
   { to: "/clientes", label: "Base de clientes", icon: <Building2 size={17} /> },
   { to: "/contexto", label: "Contexto IA", icon: <Sparkles size={17} /> },
 ]
+const NAV_VENDEDOR: NavItem[] = [
+  { to: "/avance", label: "Mi avance", icon: <Activity size={17} /> },
+  { to: "/pipeline", label: "Oportunidades", icon: <Columns3 size={17} /> },
+  { to: "/leads", label: "Buscar leads (IA)", icon: <Search size={17} /> },
+]
 
 export function VentasLayout() {
-  const { rol, setRol, vendedor } = useVentas()
+  const { rol, modo, setModo, vendedor, vendedores, verVendedorId, setVerVendedorId, usuario, signOut } =
+    useVentas()
   const { tema, toggle } = useTheme()
   const navigate = useNavigate()
 
-  const activasVendedor = OPORTUNIDADES.filter(
-    (o) => o.vendedor_id === vendedor.id && esActiva(o)
-  ).length
-
-  const navVendedor: NavItem[] = [
-    { to: "/avance", label: "Mi avance", icon: <Activity size={17} /> },
-    { to: "/pipeline", label: "Oportunidades", icon: <Columns3 size={17} />, badge: activasVendedor },
-    { to: "/leads", label: "Buscar leads (IA)", icon: <Search size={17} /> },
-  ]
-
-  function cambiarRol(r: RolVentas) {
-    setRol(r)
-    navigate(r === "admin" ? "/dashboard" : "/avance")
+  function cambiarModo(m: RolVentas) {
+    setModo(m)
+    navigate(m === "admin" ? "/dashboard" : "/avance")
   }
 
+  async function handleSalir() {
+    await signOut()
+    navigate("/login", { replace: true })
+  }
+
+  const esVista = modo === "admin"
   const quien =
-    rol === "admin"
-      ? { ini: "GB", nombre: "Gerencia CL", sub: "Admin comercial" }
+    modo === "admin"
+      ? {
+          ini: usuario?.iniciales ?? "AD",
+          nombre: usuario?.nombre || "Admin",
+          sub: "Admin comercial",
+        }
       : { ini: vendedor.iniciales, nombre: vendedor.nombre, sub: `Vendedor · ${vendedor.zona}` }
 
   return (
@@ -72,36 +75,58 @@ export function VentasLayout() {
           </span>
           <div className="leading-tight">
             <div className="text-[15px] font-semibold text-white">
-              Welivery <span className="text-mint">Ventas</span>
+              Welivery <span className="text-mint">Comercial</span>
             </div>
             <div className="text-[10px] uppercase tracking-[0.14em] text-[#8394b3]">Chile</div>
           </div>
         </div>
 
-        {/* Toggle de rol */}
-        <div className="mx-1 mb-3.5 flex gap-1 rounded-lg bg-white/[0.06] p-1">
-          {(["admin", "vendedor"] as RolVentas[]).map((r) => (
-            <button
-              key={r}
-              onClick={() => cambiarRol(r)}
-              className={cn(
-                "flex-1 rounded-md py-1.5 text-xs font-medium capitalize transition-colors",
-                rol === r ? "bg-white text-navy" : "text-[#8394b3] hover:text-white"
-              )}
+        {/* Toggle de vista — solo para admin (previsualizar vistas de vendedor) */}
+        {rol === "admin" && (
+          <div className="mx-1 mb-3 flex gap-1 rounded-lg bg-white/[0.06] p-1">
+            {(["admin", "vendedor"] as RolVentas[]).map((m) => (
+              <button
+                key={m}
+                onClick={() => cambiarModo(m)}
+                className={cn(
+                  "flex-1 rounded-md py-1.5 text-xs font-medium capitalize transition-colors",
+                  modo === m ? "bg-white text-navy" : "text-[#8394b3] hover:text-white"
+                )}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Selector de vendedor (admin viendo la vista de vendedor) */}
+        {rol === "admin" && modo === "vendedor" && vendedores.length > 0 && (
+          <div className="mx-1 mb-3">
+            <label className="mb-1 block px-1 text-[10px] uppercase tracking-wide text-[#8394b3]">
+              Ver como
+            </label>
+            <select
+              value={verVendedorId ?? vendedor.id}
+              onChange={(e) => setVerVendedorId(e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-white/[0.06] px-2 py-1.5 text-[12.5px] text-white outline-none"
             >
-              {r}
-            </button>
-          ))}
-        </div>
+              {vendedores.map((v) => (
+                <option key={v.id} value={v.id} className="text-ink">
+                  {v.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Navegación */}
-        {rol === "admin" ? (
+        {esVista ? (
           <>
             <NavGroup label="Gestión" items={NAV_ADMIN} />
             <NavGroup label="Datos" items={NAV_ADMIN_DATOS} />
           </>
         ) : (
-          <NavGroup label="Mi mes" items={navVendedor} />
+          <NavGroup label="Mi mes" items={NAV_VENDEDOR} />
         )}
 
         {/* Footer */}
@@ -121,7 +146,8 @@ export function VentasLayout() {
             {tema === "claro" ? <Moon size={15} /> : <Sun size={15} />}
           </button>
           <button
-            title="Salir (mock)"
+            onClick={handleSalir}
+            title="Cerrar sesión"
             className="grid size-8 place-items-center rounded-lg text-[#8394b3] hover:bg-white/[0.07] hover:text-white"
           >
             <LogOut size={15} />
@@ -161,11 +187,6 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
                 )}
                 {i.icon}
                 <span>{i.label}</span>
-                {i.badge != null && i.badge > 0 && (
-                  <span className="ml-auto rounded-full bg-coral px-1.5 text-[10px] font-semibold text-white">
-                    {i.badge}
-                  </span>
-                )}
               </>
             )}
           </NavLink>

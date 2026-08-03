@@ -1,19 +1,33 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Check, Pencil, Plus, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
-import { SectionTitle, VAvatar } from "@/components/widgets"
-import { CONTEXTO_IA, VENDEDORES } from "@/data/mock"
+import { Cargando, ErrorMsg, SectionTitle, VAvatar } from "@/components/widgets"
+import { useContexto, useVendedores } from "@/hooks/useData"
 import { cn } from "@/lib/utils"
+import type { FuenteIA } from "@/lib/types"
 
 export function AdminContexto() {
-  const [general, setGeneral] = useState(CONTEXTO_IA.general)
+  const { data: contexto, loading, error } = useContexto()
+  const { data: vendedores } = useVendedores()
+  const vends = vendedores ?? []
+  const [general, setGeneral] = useState("")
   const [editando, setEditando] = useState(false)
-  const [fuentes, setFuentes] = useState(CONTEXTO_IA.fuentes)
+  const [fuentes, setFuentes] = useState<FuenteIA[]>([])
+
+  useEffect(() => {
+    if (contexto) {
+      setGeneral(contexto.general)
+      setFuentes(contexto.fuentes)
+    }
+  }, [contexto])
 
   const toggleFuente = (key: string) =>
     setFuentes((fs) => fs.map((f) => (f.key === key ? { ...f, activa: !f.activa } : f)))
+
+  if (loading) return <Cargando que="el contexto" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>
@@ -92,7 +106,7 @@ export function AdminContexto() {
             <h2 className="text-[14px] font-semibold text-navy">Reglas y a evitar</h2>
             <p className="mb-3 mt-0.5 text-xs text-slate">Guardarraíles para las sugerencias</p>
             <div className="flex flex-col gap-2.5 text-[12.5px] text-slate">
-              {CONTEXTO_IA.reglas.map((r, i) => (
+              {(contexto?.reglas ?? []).map((r, i) => (
                 <div key={i} className="flex gap-2.5">
                   <span className={cn("shrink-0 font-semibold", r.tipo === "evitar" ? "text-error" : "text-success")}>
                     {r.tipo === "evitar" ? "✕" : "✓"}
@@ -110,8 +124,8 @@ export function AdminContexto() {
 
       <SectionTitle titulo="Contexto por vendedor" hint="Notas específicas que ajustan las sugerencias de cada uno" />
       <div className="grid gap-4 lg:grid-cols-2">
-        {CONTEXTO_IA.por_vendedor.map((cv) => {
-          const v = VENDEDORES.find((x) => x.id === cv.vendedor_id)
+        {(contexto?.por_vendedor ?? []).map((cv) => {
+          const v = vends.find((x) => x.id === cv.vendedor_id)
           if (!v) return null
           return (
             <Card key={cv.vendedor_id} className="p-[18px]">

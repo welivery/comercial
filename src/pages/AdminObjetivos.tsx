@@ -3,8 +3,9 @@ import { Check, Copy } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
-import { BucketChip, SectionTitle, VAvatar } from "@/components/widgets"
-import { OBJETIVOS, VENDEDORES } from "@/data/mock"
+import { BucketChip, Cargando, ErrorMsg, SectionTitle, VAvatar } from "@/components/widgets"
+import { useObjetivos, useVendedores } from "@/hooks/useData"
+import { PERIODO_ACTUAL } from "@/lib/display"
 import { BUCKETS, BUCKET_COLOR } from "@/lib/buckets"
 import type { Bucket, Objetivo, Vendedor } from "@/lib/types"
 
@@ -78,8 +79,15 @@ function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo: 
 }
 
 export function AdminObjetivos() {
-  const editores = VENDEDORES.slice(0, 2)
-  const resto = VENDEDORES.slice(2)
+  const { data: vendedores, loading, error } = useVendedores()
+  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
+  const vends = vendedores ?? []
+  const objs = objetivos ?? []
+  const editores = vends.slice(0, 2)
+  const resto = vends.slice(2)
+
+  if (loading) return <Cargando que="los objetivos" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>
@@ -97,7 +105,7 @@ export function AdminObjetivos() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {editores.map((v) => {
-          const obj = OBJETIVOS.find((o) => o.vendedor_id === v.id)
+          const obj = objs.find((o) => o.vendedor_id === v.id)
           return obj ? <ObjetivoEditor key={v.id} vendedor={v} objetivo={obj} /> : null
         })}
       </div>
@@ -117,7 +125,7 @@ export function AdminObjetivos() {
           </thead>
           <tbody>
             {resto.map((v) => {
-              const obj = OBJETIVOS.find((o) => o.vendedor_id === v.id)
+              const obj = objs.find((o) => o.vendedor_id === v.id)
               if (!obj) return null
               return (
                 <tr key={v.id} className="border-t border-border">

@@ -3,9 +3,9 @@ import { Link } from "react-router-dom"
 import { ListFilter, MapPin, Package, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
-import { BucketChip } from "@/components/widgets"
+import { BucketChip, Cargando, ErrorMsg } from "@/components/widgets"
 import { useVentas } from "@/store"
-import { OPORTUNIDADES } from "@/data/mock"
+import { useOportunidades } from "@/hooks/useData"
 import { esActiva } from "@/lib/metrics"
 import {
   ESTADOS_PIPELINE,
@@ -36,9 +36,13 @@ function footTexto(o: Oportunidad): { texto: string; color?: string } {
 
 export function VendedorPipeline() {
   const { vendedor } = useVentas()
-  const ops = useMemo(() => OPORTUNIDADES.filter((o) => o.vendedor_id === vendedor.id), [vendedor.id])
+  const { data: oportunidades, loading, error } = useOportunidades(vendedor.id)
+  const ops = useMemo(() => oportunidades ?? [], [oportunidades])
   const activas = ops.filter(esActiva).length
   const perdidas = ops.filter((o) => o.estado === "perdido").length
+
+  if (loading) return <Cargando que="tu pipeline" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>

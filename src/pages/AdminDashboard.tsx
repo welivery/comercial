@@ -5,26 +5,36 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead, MonthPill } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
-import { BucketChip, MixBar, Progress, VAvatar } from "@/components/widgets"
-import { OBJETIVOS, OPORTUNIDADES, VENDEDORES } from "@/data/mock"
+import { BucketChip, Cargando, ErrorMsg, MixBar, Progress, VAvatar } from "@/components/widgets"
+import { useObjetivos, useOportunidades, useVendedores } from "@/hooks/useData"
 import { avanceEquipo, avanceVendedor, embudo } from "@/lib/metrics"
 import { BUCKET_COLOR, BUCKET_LABEL, UMBRAL_ESTRATEGICO } from "@/lib/buckets"
 import { ESTADO_COLOR, ESTADO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
 
 export function AdminDashboard() {
-  const eq = useMemo(() => avanceEquipo(OPORTUNIDADES, OBJETIVOS, PERIODO_ACTUAL), [])
-  const fun = useMemo(() => embudo(OPORTUNIDADES), [])
+  const { data: vendedores } = useVendedores()
+  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
+  const { data: oportunidades, loading, error } = useOportunidades()
+  const ops = oportunidades ?? []
+  const objs = objetivos ?? []
+  const vends = vendedores ?? []
+
+  const eq = useMemo(() => avanceEquipo(ops, objs, PERIODO_ACTUAL), [ops, objs])
+  const fun = useMemo(() => embudo(ops), [ops])
   const base = fun[0]?.cantidad || 1
 
   const filas = useMemo(
     () =>
-      VENDEDORES.map((v) => {
-        const ops = OPORTUNIDADES.filter((o) => o.vendedor_id === v.id)
-        const obj = OBJETIVOS.find((o) => o.vendedor_id === v.id)
-        return { v, av: avanceVendedor(ops, obj, PERIODO_ACTUAL) }
+      vends.map((v) => {
+        const vops = ops.filter((o) => o.vendedor_id === v.id)
+        const obj = objs.find((o) => o.vendedor_id === v.id)
+        return { v, av: avanceVendedor(vops, obj, PERIODO_ACTUAL) }
       }),
-    []
+    [vends, ops, objs]
   )
+
+  if (loading) return <Cargando que="el dashboard" />
+  if (error) return <ErrorMsg msg={error} />
 
   return (
     <>

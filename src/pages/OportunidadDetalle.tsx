@@ -2,8 +2,8 @@ import { Link, useParams } from "react-router-dom"
 import { ArrowLeft, FileText, Pencil, Receipt } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { BucketChip, EstadoBadge } from "@/components/widgets"
-import { OPORTUNIDADES, EVENTOS } from "@/data/mock"
+import { BucketChip, Cargando, EstadoBadge } from "@/components/widgets"
+import { useEventos, useOportunidad } from "@/hooks/useData"
 import { motivoBucket } from "@/lib/buckets"
 import {
   ESTADOS_PIPELINE,
@@ -25,7 +25,10 @@ const PASO_CORTO: Record<string, string> = {
 
 export function OportunidadDetalle() {
   const { id } = useParams()
-  const o = OPORTUNIDADES.find((x) => x.id === id)
+  const { data: o, loading } = useOportunidad(id)
+  const { data: eventosData } = useEventos(id)
+
+  if (loading) return <Cargando que="la oportunidad" />
 
   if (!o) {
     return (
@@ -38,7 +41,7 @@ export function OportunidadDetalle() {
     )
   }
 
-  const eventos = EVENTOS.filter((e) => e.oportunidad_id === o.id)
+  const eventos = eventosData ?? []
   const idxActual = ESTADOS_PIPELINE.indexOf(o.estado)
 
   const kv: [string, React.ReactNode][] = [
