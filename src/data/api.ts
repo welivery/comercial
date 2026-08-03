@@ -248,6 +248,17 @@ export async function eliminarCliente(id: string): Promise<void> {
   const { error } = await supabase.from("clientes").delete().eq("id", id)
   if (error) throw new Error(error.message)
 }
+// Alta en masa (importación CSV). Inserta en lotes para no exceder límites.
+export async function crearClientesBulk(rows: ClienteInput[]): Promise<number> {
+  let insertados = 0
+  for (let i = 0; i < rows.length; i += 200) {
+    const lote = rows.slice(i, i + 200)
+    const { error } = await supabase.from("clientes").insert(lote)
+    if (error) throw new Error(error.message)
+    insertados += lote.length
+  }
+  return insertados
+}
 
 // Ensambla el contexto IA de sus 4 tablas.
 export async function fetchContexto(): Promise<ContextoIA> {

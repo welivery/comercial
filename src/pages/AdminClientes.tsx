@@ -9,9 +9,11 @@ import { useClientes, useContexto, useVendedores } from "@/hooks/useData"
 import {
   actualizarCliente,
   crearCliente,
+  crearClientesBulk,
   eliminarCliente,
   type ClienteInput,
 } from "@/data/api"
+import { CSV_PLANTILLA, parseClientesCsv, type ParseResult } from "@/lib/csv"
 import { BUCKETS, BUCKET_LABEL } from "@/lib/buckets"
 import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, iniciales } from "@/lib/display"
 import { cn } from "@/lib/utils"
@@ -52,6 +54,57 @@ export function AdminClientes() {
   const [form, setForm] = useState<ClienteInput>(VACIO)
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
+
+  // Importación CSV
+  const [impOpen, setImpOpen] = useState(false)
+  const [impResult, setImpResult] = useState<ParseResult | null>(null)
+  const [impNombre, setImpNombre] = useState("")
+  const [importando, setImportando] = useState(false)
+  const [impMsg, setImpMsg] = useState<string | null>(null)
+
+  function abrirImport() {
+    setImpResult(null)
+    setImpNombre("")
+    setImpMsg(null)
+    setImpOpen(true)
+  }
+  function analizar(texto: string, nombre: string) {
+    setImpNombre(nombre)
+    setImpMsg(null)
+    setImpResult(parseClientesCsv(texto, vends.map((v) => ({ id: v.id, nombre: v.nombre, email: v.email }))))
+  }
+  function onArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    const reader = new FileReader()
+    reader.onload = () => analizar(String(reader.result ?? ""), f.name)
+    reader.readAsText(f)
+  }
+  function descargarPlantilla() {
+    const blob = new Blob([CSV_PLANTILLA], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "plantilla-clientes-welivery.csv"
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+  async function importar() {
+    if (!impResult?.rows.length) return
+    setImportando(true)
+    setImpMsg(null)
+    try {
+      const n = await crearClientesBulk(impResult.rows)
+      setImpOpen(false)
+      reload()
+      setImpMsg(null)
+      window.alert(`Se importaron ${n} clientes.`)
+    } catch (err) {
+      setImpMsg(err instanceof Error ? err.message : "No se pudo importar")
+    } finally {
+      setImportando(false)
+    }
+  }
 
   const counts = useMemo(() => {
     const c = { activo: 0, ex_cliente: 0, prospeccion: 0 } as Record<SegmentoCliente, number>
@@ -122,7 +175,7 @@ export function AdminClientes() {
   return (
     <>
       <PageHead titulo="Base de clientes" descripcion="Clientes, bajas y prospección · alimenta al asistente de leads">
-        <Button variant="outline" disabled title="Próximamente">
+        <Button variant="outline" onClick={abrirImport}>
           <Upload /> Importar CSV
         </Button>
         <Button variant="blue" onClick={abrirNuevo}>
@@ -362,8 +415,86 @@ export function AdminClientes() {
         </form>
       </Modal>
 
+      {/* Modal: importar CSV */}
+      <Modal open={impOpen} onClose={() => setImpOpen(false)} title="Importar clientes desde CSV">
+        <div className="flex flex-col gap-3.5">
+          <div className="rounded-lg bg-mist/70 p-3 text-[12.5px] leading-relaxed text-slate">
+            <b className="text-ink">Formato:</b> una fila por cliente, con encabezado. Un mismo archivo puede
+            traer <b>activos, ex-clientes y prospección</b> (lo define la columna <code>segmento</code>).
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[11.5px]">
+                <tbody>
+                  <Fila k="nombre" v="obligatorio" />
+                  <Fila k="segmento" v="activo · ex_cliente · prospeccion" />
+                  <Fila k="envios_mes" v="número (ej: 890)" />
+                  <Fila k="bucket" v="estrategico · fulfillment · mediano (opcional; si vacío se calcula)" />
+                  <Fila k="vendedor_email" v="email del vendedor (opcional)" />
+                  <Fila k="motivo_baja" v="precio · servicio · cerro · deuda · otro (solo ex_cliente)" />
+                  <Fila k="nota" v="texto libre (opcional)" />
+                </tbody>
+              </table>
+            </div>
+            <button onClick={descargarPlantilla} className="mt-2 font-medium text-blue hover:underline">
+              ↓ Descargar plantilla de ejemplo
+            </button>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Archivo .csv</span>
+            <input type="file" accept=".csv,text/csv" onChange={onArchivo} className="text-[13px] text-slate" />
+          </label>
+          <div className="text-center text-[11px] text-muted">— o pegá el contenido —</div>
+          <textarea
+            rows={4}
+            onChange={(e) => analizar(e.target.value, "pegado")}
+            className="inp font-mono text-[12px]"
+            placeholder="nombre,segmento,envios_mes,bucket,vendedor_email,motivo_baja,nota"
+          />
+
+          {impResult && (
+            <div className="rounded-lg border border-border p-3 text-[12.5px]">
+              <div className="font-medium text-ink">
+                {impNombre && <span className="text-slate">{impNombre} · </span>}
+                {impResult.rows.length} listos para importar
+                {impResult.errores.length > 0 && (
+                  <span className="text-warning"> · {impResult.errores.length} avisos</span>
+                )}
+              </div>
+              {impResult.errores.length > 0 && (
+                <ul className="mt-1.5 max-h-24 list-disc overflow-y-auto pl-4 text-[11.5px] text-slate">
+                  {impResult.errores.slice(0, 8).map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                  {impResult.errores.length > 8 && <li>…y {impResult.errores.length - 8} más</li>}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {impMsg && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{impMsg}</div>}
+
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setImpOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="blue" disabled={importando || !impResult?.rows.length} onClick={importar}>
+              {importando ? "Importando…" : `Importar ${impResult?.rows.length ?? 0}`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>
     </>
+  )
+}
+
+function Fila({ k, v }: { k: string; v: string }) {
+  return (
+    <tr>
+      <td className="whitespace-nowrap py-0.5 pr-3 align-top font-mono text-blue">{k}</td>
+      <td className="py-0.5 text-slate">{v}</td>
+    </tr>
   )
 }
 
