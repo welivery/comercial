@@ -1,12 +1,14 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { Settings2, TrendingUp, UserPlus, Users } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
+import { Modal } from "@/components/Modal"
 import { Cargando, ErrorMsg, Progress, SectionTitle, VAvatar } from "@/components/widgets"
 import { useObjetivos, useOportunidades, useVendedores } from "@/hooks/useData"
+import { crearUsuario, crearUsuarioConAcceso } from "@/data/api"
 import { avanceVendedor, type AvanceVendedor } from "@/lib/metrics"
 import { PERIODO_ACTUAL } from "@/lib/display"
 import type { Vendedor } from "@/lib/types"
@@ -54,12 +56,51 @@ function GoalRow({
   )
 }
 
+interface NuevoForm {
+  nombre: string
+  email: string
+  zona: string
+  password: string
+}
+const VACIO: NuevoForm = { nombre: "", email: "", zona: "", password: "" }
+
 export function AdminVendedores() {
-  const { data: vendedores, loading, error } = useVendedores()
+  const { data: vendedores, loading, error, reload } = useVendedores()
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const { data: oportunidades } = useOportunidades()
   const ops = oportunidades ?? []
   const objs = objetivos ?? []
+
+  const [abierto, setAbierto] = useState(false)
+  const [form, setForm] = useState<NuevoForm>(VACIO)
+  const [guardando, setGuardando] = useState(false)
+  const [errForm, setErrForm] = useState<string | null>(null)
+
+  async function agregar(e: React.FormEvent) {
+    e.preventDefault()
+    setGuardando(true)
+    setErrForm(null)
+    try {
+      if (form.password.trim()) {
+        await crearUsuarioConAcceso({
+          email: form.email,
+          nombre: form.nombre,
+          zona: form.zona,
+          rol: "vendedor",
+          password: form.password.trim(),
+        })
+      } else {
+        await crearUsuario({ email: form.email, nombre: form.nombre, zona: form.zona, rol: "vendedor" })
+      }
+      setAbierto(false)
+      setForm(VACIO)
+      reload()
+    } catch (err) {
+      setErrForm(err instanceof Error ? err.message : "No se pudo agregar")
+    } finally {
+      setGuardando(false)
+    }
+  }
 
   const filas: Fila[] = useMemo(
     () =>
@@ -91,10 +132,8 @@ export function AdminVendedores() {
             <Settings2 /> Gestionar usuarios
           </Link>
         </Button>
-        <Button asChild variant="default">
-          <Link to="/usuarios">
-            <UserPlus /> Agregar vendedor
-          </Link>
+        <Button variant="default" onClick={() => { setForm(VACIO); setErrForm(null); setAbierto(true) }}>
+          <UserPlus /> Agregar vendedor
         </Button>
       </PageHead>
 
@@ -175,6 +214,46 @@ export function AdminVendedores() {
           )
         })}
       </div>
+
+      {filas.length === 0 && (
+        <Card className="p-8 text-center">
+          <p className="text-[13px] text-slate">Todavía no hay vendedores cargados.</p>
+          <Button variant="blue" className="mt-3" onClick={() => { setForm(VACIO); setErrForm(null); setAbierto(true) }}>
+            <UserPlus /> Agregar el primero
+          </Button>
+        </Card>
+      )}
+
+      <Modal open={abierto} onClose={() => setAbierto(false)} title="Nuevo vendedor">
+        <form onSubmit={agregar} className="flex flex-col gap-3.5">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Nombre</span>
+            <input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} className="inp" placeholder="Nombre y apellido" required />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Email</span>
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="inp" placeholder="persona@welivery.cl" required />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Zona</span>
+            <input value={form.zona} onChange={(e) => setForm({ ...form, zona: e.target.value })} className="inp" placeholder="Santiago Centro" />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Contraseña (opcional)</span>
+            <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="inp" placeholder="Dejá vacío para que se registre solo/a" autoComplete="off" />
+            <span className="text-[11px] text-muted">Con contraseña le creás el acceso directo (requiere la Edge Function deployada). Vacío = solo la ficha; se registra con su email desde el login.</span>
+          </label>
+
+          {errForm && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{errForm}</div>}
+
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setAbierto(false)}>Cancelar</Button>
+            <Button type="submit" variant="blue" disabled={guardando}>{guardando ? "Guardando…" : "Agregar"}</Button>
+          </div>
+        </form>
+      </Modal>
+
+      <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>
     </>
   )
 }
