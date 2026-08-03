@@ -1,0 +1,161 @@
+import { useMemo } from "react"
+import { TrendingUp, UserPlus, Users } from "lucide-react"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { PageHead } from "@/components/PageHead"
+import { StatTile } from "@/components/StatTile"
+import { Progress, SectionTitle, VAvatar } from "@/components/widgets"
+import { OBJETIVOS, OPORTUNIDADES, VENDEDORES } from "@/data/mock"
+import { avanceVendedor, type AvanceVendedor } from "@/lib/metrics"
+import { PERIODO_ACTUAL } from "@/lib/display"
+import type { Vendedor } from "@/lib/types"
+
+interface Fila {
+  v: Vendedor
+  av: AvanceVendedor
+  enRiesgo: boolean
+}
+
+function GoalRow({
+  color,
+  titulo,
+  sub,
+  value,
+  max,
+  objetivo,
+  figA,
+  figB,
+}: {
+  color: string
+  titulo: string
+  sub: string
+  value: number
+  max: number
+  objetivo?: number
+  figA: string
+  figB?: string
+}) {
+  return (
+    <div className="flex items-center gap-3.5 border-b border-border py-3 last:border-b-0">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: color + "1F" }}>
+        <span className="size-2.5 rounded-full" style={{ background: color }} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium text-ink">{titulo}</div>
+        <div className="text-[11px] text-slate">{sub}</div>
+      </div>
+      <Progress value={value} max={max} color={color} objetivo={objetivo} className="w-24" />
+      <div className="w-[70px] text-right text-[13px] font-semibold tabular-nums text-ink">
+        {figA}
+        {figB && <span className="font-normal text-slate">{figB}</span>}
+      </div>
+    </div>
+  )
+}
+
+export function AdminVendedores() {
+  const filas: Fila[] = useMemo(
+    () =>
+      VENDEDORES.map((v) => {
+        const ops = OPORTUNIDADES.filter((o) => o.vendedor_id === v.id)
+        const obj = OBJETIVOS.find((o) => o.vendedor_id === v.id)
+        const av = avanceVendedor(ops, obj, PERIODO_ACTUAL)
+        const estr = av.mix.find((m) => m.bucket === "estrategico")
+        const enRiesgo = av.pctObjetivo < 80 || (estr ? estr.pct < estr.objetivoPct - 8 : false)
+        return { v, av, enRiesgo }
+      }),
+    []
+  )
+
+  const mejor = [...filas].sort((a, b) => b.av.pctObjetivo - a.av.pctObjetivo)[0]
+  const enRiesgo = filas.filter((f) => f.enRiesgo).length
+  const cierrePromedio = Math.round(filas.reduce((a, f) => a + f.av.tasaCierre, 0) / filas.length)
+
+  return (
+    <>
+      <PageHead titulo="Vendedores" descripcion="Detalle mensual del equipo">
+        <Button variant="default">
+          <UserPlus /> Agregar vendedor
+        </Button>
+      </PageHead>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatTile label="Equipo" valor={VENDEDORES.length} icon={<Users size={14} />} sub="vendedores activos" />
+        <StatTile
+          label="Mejor avance"
+          valor={<span className="text-[18px]">{mejor.v.nombre.split(" ")[0]}</span>}
+          color="#1E9E6A"
+          sub={`${mejor.av.pctObjetivo}% del objetivo`}
+          subTono="up"
+        />
+        <StatTile
+          label="En riesgo"
+          valor={enRiesgo}
+          color="#F2563A"
+          sub="bajo objetivo o mix desalineado"
+        />
+        <StatTile
+          label="Cierre promedio"
+          valor={<>{cierrePromedio}%</>}
+          color="#1E9E6A"
+          icon={<TrendingUp size={14} />}
+          sub="del equipo"
+        />
+      </div>
+
+      <SectionTitle titulo="Vendedores" hint="Avance del mes por persona" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        {filas.map(({ v, av, enRiesgo }) => {
+          const estr = av.mix.find((m) => m.bucket === "estrategico")
+          return (
+            <Card key={v.id} className="p-[18px]">
+              <div className="mb-3.5 flex items-center gap-3">
+                <VAvatar iniciales={v.iniciales} className="size-10 text-[14px]" />
+                <div className="leading-tight">
+                  <div className="text-[15px] font-semibold text-ink">{v.nombre}</div>
+                  <div className="text-[11.5px] text-slate">{v.zona}</div>
+                </div>
+                <span
+                  className="ml-auto rounded-md px-2 py-0.5 text-[11px] font-medium"
+                  style={{
+                    background: (enRiesgo ? "#F2563A" : "#1E9E6A") + "1F",
+                    color: enRiesgo ? "#F2563A" : "#1E9E6A",
+                  }}
+                >
+                  {enRiesgo ? "En riesgo" : "Al día"}
+                </span>
+              </div>
+              <GoalRow
+                color={av.pctObjetivo >= 80 ? "#2F5BE6" : "#F2563A"}
+                titulo="Reuniones efectivas"
+                sub={`objetivo ${av.objetivo}`}
+                value={av.efectivas}
+                max={av.objetivo}
+                objetivo={av.objetivo}
+                figA={`${av.efectivas}`}
+                figB={`/${av.objetivo}`}
+              />
+              <GoalRow
+                color="#1E9E6A"
+                titulo="Tasa de cierre"
+                sub={`${av.cierres} cierres`}
+                value={av.tasaCierre}
+                max={100}
+                figA={`${av.tasaCierre}%`}
+              />
+              <GoalRow
+                color="#7A869C"
+                titulo="Mix estratégico"
+                sub={`objetivo ${estr?.objetivoPct ?? 0}%`}
+                value={estr?.pct ?? 0}
+                max={100}
+                objetivo={estr?.objetivoPct}
+                figA={`${estr?.pct ?? 0}%`}
+              />
+            </Card>
+          )
+        })}
+      </div>
+    </>
+  )
+}

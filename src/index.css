@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Welivery brand — Manual de Marca v2.0 */
+  --color-navy: #152a4f;       /* Azul principal — identidad, encabezados */
+  --color-blue: #2f5be6;       /* Azul digital — acciones, links, énfasis */
+  --color-coral: #f2563a;      /* Energía — acentos de acción */
+  --color-mint: #6fe0cb;       /* Innovación — ruta, tracking */
+
+  --color-ink: #0f1a2e;        /* Tinta */
+  --color-slate: #5a6577;      /* Pizarra */
+  --color-muted: #a6aebc;      /* Apagado */
+  --color-cloud: #e7ebf1;      /* Nube */
+  --color-mist: #f6f8fb;       /* Bruma */
+
+  --color-success: #1e9e6a;    /* Entregado */
+  --color-warning: #e0a52f;    /* En proceso */
+  --color-error: #db3b3b;      /* Incidencia */
+
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: var(--color-ink);
+  --card: #ffffff;
+  --card-foreground: var(--color-ink);
+  --popover: #ffffff;
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-navy);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-mist);
+  --secondary-foreground: var(--color-navy);
+  --muted: var(--color-mist);
+  --muted-foreground: var(--color-slate);
+  --accent: var(--color-blue);
+  --accent-foreground: #ffffff;
+  --destructive: var(--color-error);
+  --border: var(--color-cloud);
+  --input: var(--color-cloud);
+  --ring: var(--color-blue);
+}
+
+@theme inline {
+  --font-sans: 'Poppins', system-ui, sans-serif;
+
+  /* Sombra suave de marca para cards sobre Bruma */
+  --shadow-card: 0 1px 2px rgba(21, 42, 79, 0.04), 0 4px 16px rgba(21, 42, 79, 0.06);
+  --shadow-card-hover: 0 2px 4px rgba(21, 42, 79, 0.06), 0 8px 24px rgba(21, 42, 79, 0.10);
+
+  --color-navy: #152a4f;
+  --color-blue: #2f5be6;
+  --color-coral: #f2563a;
+  --color-mint: #6fe0cb;
+  --color-ink: #0f1a2e;
+  --color-slate: #5a6577;
+  --color-muted: #8b94a3;
+  --color-cloud: #e7ebf1;
+  --color-mist: #f6f8fb;
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  /* Nota: --color-muted lo define la paleta de marca arriba (Apagado).
+     Acá solo exponemos el foreground semántico de shadcn (placeholders). */
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+.dark {
+  --background: var(--color-ink);
+  --foreground: #ffffff;
+  --card: var(--color-navy);
+  --card-foreground: #ffffff;
+  --popover: var(--color-navy);
+  --popover-foreground: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: var(--color-navy);
+  --secondary: var(--color-navy);
+  --secondary-foreground: #ffffff;
+  --muted: var(--color-navy);
+  --muted-foreground: var(--color-muted);
+  --accent: var(--color-blue);
+  --accent-foreground: #ffffff;
+  --destructive: var(--color-error);
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: var(--color-blue);
+}
+
+/* Modo oscuro — remapeo de utilidades de marca para que el contenido existente
+   se adapte sin reescribir cada pantalla. Las superficies blancas pasan a navy,
+   y los textos oscuros (navy/tinta/pizarra) a tonos claros legibles. */
+.dark .bg-white { background-color: var(--color-navy) !important; }
+.dark .text-navy { color: #E7EBF1; }
+.dark .text-ink { color: #ffffff; }
+.dark .text-slate { color: #A6AEBC; }
+.dark .text-muted { color: #8B94A3; }
+.dark .bg-mist { background-color: #1A2C4D; }
+.dark .bg-mist\/40 { background-color: rgba(26, 44, 77, 0.5); }
+.dark .bg-mist\/50 { background-color: rgba(26, 44, 77, 0.6); }
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold text-foreground;
+  }
+}
