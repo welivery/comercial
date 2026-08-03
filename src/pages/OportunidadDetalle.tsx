@@ -4,7 +4,9 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { BucketChip, Cargando, EstadoBadge } from "@/components/widgets"
 import { useEventos, useOportunidad } from "@/hooks/useData"
+import { moverOportunidad } from "@/data/api"
 import { motivoBucket } from "@/lib/buckets"
+import type { EstadoOportunidad } from "@/lib/types"
 import {
   ESTADOS_PIPELINE,
   ESTADO_LABEL,
@@ -25,8 +27,18 @@ const PASO_CORTO: Record<string, string> = {
 
 export function OportunidadDetalle() {
   const { id } = useParams()
-  const { data: o, loading } = useOportunidad(id)
+  const { data: o, loading, reload } = useOportunidad(id)
   const { data: eventosData } = useEventos(id)
+
+  async function mover(nuevo: EstadoOportunidad) {
+    if (!o || nuevo === o.estado) return
+    try {
+      await moverOportunidad(o, nuevo)
+      reload()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo actualizar")
+    }
+  }
 
   if (loading) return <Cargando que="la oportunidad" />
 
@@ -117,13 +129,26 @@ export function OportunidadDetalle() {
             ))}
           </dl>
 
-          <div className="mt-5 flex flex-wrap gap-2.5">
-            <Button variant="blue">
-              <FileText /> Enviar propuesta
-            </Button>
-            <Button variant="outline">
-              <Pencil /> Cambiar estado
-            </Button>
+          <div className="mt-5 flex flex-wrap items-center gap-2.5">
+            {o.estado !== "propuesta_enviada" && o.estado !== "cierre_ganado" && o.estado !== "perdido" && (
+              <Button variant="blue" onClick={() => mover("propuesta_enviada")}>
+                <FileText /> Enviar propuesta
+              </Button>
+            )}
+            <label className="flex items-center gap-2 rounded-md border border-input px-2.5 py-1.5 text-[13px] text-slate">
+              <Pencil size={14} /> Estado:
+              <select
+                value={o.estado}
+                onChange={(e) => mover(e.target.value as EstadoOportunidad)}
+                className="bg-transparent font-medium text-ink outline-none"
+              >
+                {[...ESTADOS_PIPELINE, "perdido" as EstadoOportunidad].map((es) => (
+                  <option key={es} value={es}>
+                    {ESTADO_LABEL[es]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <Button variant="outline" disabled className="opacity-70">
               <Receipt /> Cotizar
               <span className="text-[10px] text-muted">(pronto)</span>

@@ -2,6 +2,7 @@
 // dominio (los mismos que consumían los mocks, así métricas/vistas no cambian).
 
 import { supabase } from "@/lib/supabase"
+import { asignarBucket } from "@/lib/buckets"
 import { iniciales } from "@/lib/display"
 import type {
   Bucket,
@@ -198,11 +199,78 @@ export async function fetchObjetivos(periodo: string): Promise<Objetivo[]> {
   return check(data, error).map(mapObjetivo)
 }
 
+// Alta/edición del objetivo mensual de un vendedor (upsert por vendedor+período).
+export async function guardarObjetivo(
+  vendedorId: string,
+  periodo: string,
+  reuniones: number,
+  mix: { estrategico: number; fulfillment: number; mediano: number }
+): Promise<void> {
+  const { error } = await supabase.from("objetivos").upsert(
+    {
+      vendedor_id: vendedorId,
+      periodo,
+      reuniones_efectivas: reuniones,
+      mix_estrategico: mix.estrategico,
+      mix_fulfillment: mix.fulfillment,
+      mix_mediano: mix.mediano,
+    },
+    { onConflict: "vendedor_id,periodo" }
+  )
+  if (error) throw new Error(error.message)
+}
+
 export async function fetchOportunidades(vendedorId?: string): Promise<Oportunidad[]> {
   let q = supabase.from("oportunidades").select("*").order("declarada_at", { ascending: false })
   if (vendedorId) q = q.eq("vendedor_id", vendedorId)
   const { data, error } = await q
   return check(data, error).map(mapOportunidad)
+}
+
+// ─────────────────────────── Oportunidades (escritura) ───────────────────────────
+export interface OportunidadInput {
+  vendedor_id: string
+  ecommerce: string
+  sitio: string | null
+  envios_aprox: number
+  lugar_retiro: string
+  tipo_producto: string
+  interes: string | null
+  marca_reconocida: boolean
+  quiere_fulfillment: boolean
+  origen: OrigenOportunidad
+}
+
+export async function crearOportunidad(i: OportunidadInput): Promise<void> {
+  const bucket = asignarBucket({
+    marca_reconocida: i.marca_reconocida,
+    envios_aprox: i.envios_aprox,
+    quiere_fulfillment: i.quiere_fulfillment,
+  })
+  const { error } = await supabase.from("oportunidades").insert({ ...i, bucket, estado: "interesado" })
+  if (error) throw new Error(error.message)
+}
+
+const ORDEN_ESTADOS: EstadoOportunidad[] = [
+  "interesado",
+  "reunion_coordinada",
+  "reunion_efectiva",
+  "propuesta_enviada",
+  "seguimiento",
+  "cierre_ganado",
+]
+
+// Cambia el estado y backfillea los hitos temporales que correspondan (sin pisar
+// los ya seteados), para que las métricas queden consistentes.
+export async function moverOportunidad(o: Oportunidad, nuevo: EstadoOportunidad): Promise<void> {
+  const now = new Date().toISOString()
+  const idx = ORDEN_ESTADOS.indexOf(nuevo)
+  const patch: Record<string, unknown> = { estado: nuevo }
+  if (idx >= 1 && !o.reunion_coordinada_at) patch.reunion_coordinada_at = now
+  if (idx >= 2 && !o.reunion_efectiva_at) patch.reunion_efectiva_at = now
+  if (nuevo === "cierre_ganado" && !o.cierre_at) patch.cierre_at = now
+  const { error } = await supabase.from("oportunidades").update(patch).eq("id", o.id)
+  if (error) throw new Error(error.message)
 }
 
 export async function fetchOportunidad(id: string): Promise<Oportunidad | null> {

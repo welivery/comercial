@@ -1,19 +1,39 @@
 import { useState } from "react"
-import { Check, Copy } from "lucide-react"
+import { Check } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
-import { BucketChip, Cargando, ErrorMsg, SectionTitle, VAvatar } from "@/components/widgets"
+import { BucketChip, Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
 import { useObjetivos, useVendedores } from "@/hooks/useData"
-import { PERIODO_ACTUAL } from "@/lib/display"
+import { guardarObjetivo } from "@/data/api"
+import { PERIODO_ACTUAL, PERIODO_LABEL } from "@/lib/display"
 import { BUCKETS, BUCKET_COLOR } from "@/lib/buckets"
 import type { Bucket, Objetivo, Vendedor } from "@/lib/types"
 
-function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo: Objetivo }) {
-  const [reuniones, setReuniones] = useState(objetivo.reuniones_efectivas)
-  const [mix, setMix] = useState<Record<Bucket, number>>(objetivo.mix)
+const MIX_DEFAULT: Record<Bucket, number> = { estrategico: 40, fulfillment: 30, mediano: 30 }
+
+function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo?: Objetivo }) {
+  const [reuniones, setReuniones] = useState(objetivo?.reuniones_efectivas ?? 12)
+  const [mix, setMix] = useState<Record<Bucket, number>>(objetivo?.mix ?? MIX_DEFAULT)
+  const [guardando, setGuardando] = useState(false)
+  const [guardado, setGuardado] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   const suma = BUCKETS.reduce((a, b) => a + mix[b], 0)
   const ok = suma === 100
+
+  async function guardar() {
+    setGuardando(true)
+    setErr(null)
+    try {
+      await guardarObjetivo(vendedor.id, PERIODO_ACTUAL, reuniones, mix)
+      setGuardado(true)
+      setTimeout(() => setGuardado(false), 2500)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "No se pudo guardar")
+    } finally {
+      setGuardando(false)
+    }
+  }
 
   return (
     <Card className="p-[18px]">
@@ -21,16 +41,13 @@ function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo: 
         <VAvatar iniciales={vendedor.iniciales} className="size-9 text-[13px]" />
         <div className="leading-tight">
           <div className="text-[14px] font-semibold text-ink">{vendedor.nombre}</div>
-          <div className="text-[11.5px] text-slate">Vendedor · {vendedor.zona}</div>
+          <div className="text-[11.5px] text-slate">Vendedor · {vendedor.zona || "—"}</div>
         </div>
         <span
           className="ml-auto rounded-md px-2 py-0.5 text-[11px] font-medium"
-          style={{
-            background: (ok ? "#1E9E6A" : "#E0A52F") + "1F",
-            color: ok ? "#1E9E6A" : "#a5741a",
-          }}
+          style={{ background: (ok ? "#1E9E6A" : "#E0A52F") + "1F", color: ok ? "#1E9E6A" : "#a5741a" }}
         >
-          {ok ? "Al día" : `Suma ${suma}%`}
+          {ok ? "Suma 100%" : `Suma ${suma}%`}
         </span>
       </div>
 
@@ -74,6 +91,15 @@ function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo: 
           </div>
         ))}
       </div>
+
+      {err && <div className="mt-3 rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12px] text-error">{err}</div>}
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        {!ok && <span className="mr-auto text-[11.5px] text-warning">Ajustá la mezcla a 100% para guardar.</span>}
+        <Button variant={guardado ? "outline" : "blue"} disabled={!ok || guardando} onClick={guardar}>
+          <Check /> {guardando ? "Guardando…" : guardado ? "Guardado" : "Guardar"}
+        </Button>
+      </div>
     </Card>
   )
 }
@@ -83,8 +109,6 @@ export function AdminObjetivos() {
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const vends = vendedores ?? []
   const objs = objetivos ?? []
-  const editores = vends.slice(0, 2)
-  const resto = vends.slice(2)
 
   if (loading) return <Cargando que="los objetivos" />
   if (error) return <ErrorMsg msg={error} />
@@ -92,71 +116,21 @@ export function AdminObjetivos() {
   return (
     <>
       <PageHead
-        titulo="Objetivos de agosto"
+        titulo={`Objetivos · ${PERIODO_LABEL}`}
         descripcion="Cantidad de reuniones efectivas + mezcla de tipos, por vendedor"
-      >
-        <Button variant="outline">
-          <Copy /> Copiar de julio
-        </Button>
-        <Button variant="blue">
-          <Check /> Guardar cambios
-        </Button>
-      </PageHead>
+      />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {editores.map((v) => {
-          const obj = objs.find((o) => o.vendedor_id === v.id)
-          return obj ? <ObjetivoEditor key={v.id} vendedor={v} objetivo={obj} /> : null
-        })}
-      </div>
-
-      <SectionTitle titulo="Resto del equipo" hint="Vista compacta" />
-      <Card className="overflow-x-auto">
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
-              <th className="px-4 py-2.5 font-medium">Vendedor</th>
-              <th className="px-4 py-2.5 font-medium">Objetivo</th>
-              <th className="px-4 py-2.5 font-medium">Estratégico</th>
-              <th className="px-4 py-2.5 font-medium">Fulfillment</th>
-              <th className="px-4 py-2.5 font-medium">Mediano</th>
-              <th className="px-4 py-2.5" />
-            </tr>
-          </thead>
-          <tbody>
-            {resto.map((v) => {
-              const obj = objs.find((o) => o.vendedor_id === v.id)
-              if (!obj) return null
-              return (
-                <tr key={v.id} className="border-t border-border">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <VAvatar iniciales={v.iniciales} />
-                      <span className="text-[13px] font-medium text-ink">{v.nombre}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-[13px] font-semibold tabular-nums text-ink">
-                    {obj.reuniones_efectivas}
-                  </td>
-                  {BUCKETS.map((b) => (
-                    <td key={b} className="px-4 py-3">
-                      <BucketChip bucket={b} />
-                      <span className="ml-1.5 text-[12px] font-semibold tabular-nums text-ink">
-                        {obj.mix[b]}%
-                      </span>
-                    </td>
-                  ))}
-                  <td className="px-4 py-3 text-right">
-                    <Button variant="outline" size="sm">
-                      Editar
-                    </Button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </Card>
+      {vends.length === 0 ? (
+        <Card className="p-8 text-center text-[13px] text-slate">
+          No hay vendedores todavía. Agregá vendedores para cargarles objetivos.
+        </Card>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {vends.map((v) => (
+            <ObjetivoEditor key={v.id} vendedor={v} objetivo={objs.find((o) => o.vendedor_id === v.id)} />
+          ))}
+        </div>
+      )}
     </>
   )
 }
