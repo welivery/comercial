@@ -1,5 +1,6 @@
--- Welivery Ventas — Esquema (Etapa 1). Proyecto Supabase independiente de Care.
--- Espejo de src/ventas/lib/types.ts. RLS y seed en archivos separados.
+-- Welivery Comercial — Esquema. Proyecto Supabase independiente.
+-- Espejo de src/lib/types.ts. RLS y seed en archivos separados
+-- (o todo junto en setup.sql).
 
 -- ───────────────────────────── Enums ─────────────────────────────
 create type rol_ventas         as enum ('admin', 'vendedor');
@@ -13,7 +14,6 @@ create type segmento_cliente   as enum ('activo', 'ex_cliente', 'prospeccion');
 create type motivo_baja        as enum ('precio', 'servicio', 'cerro', 'deuda', 'otro');
 
 -- ───────────────────── Config de instancia (país) ─────────────────────
--- Umbral de "estratégico" y demás reglas configurables por el admin.
 create table config_ventas (
   id                   int primary key default 1,
   pais                 text not null default 'CL',
@@ -23,9 +23,13 @@ create table config_ventas (
 );
 
 -- ───────────────────────────── Vendedores ─────────────────────────────
--- Extiende auth.users (fila creada por trigger al registrarse).
+-- Registro comercial DESACOPLADO de la cuenta de login: `user_id` (nullable)
+-- enlaza con auth.users cuando la persona se registra. Así se pueden cargar
+-- vendedores y su pipeline antes de que tengan login, y el enganche se hace
+-- por email al registrarse (ver trigger abajo).
 create table vendedores (
-  id         uuid primary key references auth.users(id) on delete cascade,
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid unique references auth.users(id) on delete set null,
   nombre     text not null default '',
   email      text not null,
   rol        rol_ventas not null default 'vendedor',
@@ -33,9 +37,9 @@ create table vendedores (
   activo     boolean not null default true,
   created_at timestamptz not null default now()
 );
+create index idx_vendedores_user on vendedores(user_id);
 
 -- ───────────────────────────── Objetivos ─────────────────────────────
--- Meta mensual por vendedor. La mezcla se guarda como % por bucket (suma 100).
 create table objetivos (
   id                  uuid primary key default gen_random_uuid(),
   vendedor_id         uuid not null references vendedores(id) on delete cascade,
@@ -50,28 +54,24 @@ create table objetivos (
 );
 
 -- ───────────────────────────── Oportunidades ─────────────────────────────
--- Unidad central. El bucket se calcula por prioridad al cargar los datos
--- (ver src/ventas/lib/buckets.ts) y se persiste para consultas rápidas.
 create table oportunidades (
   id                    uuid primary key default gen_random_uuid(),
-  vendedor_id           uuid not null references vendedores(id) on delete set null,
+  vendedor_id           uuid references vendedores(id) on delete set null,
   ecommerce             text not null,
   sitio                 text,
-  envios_aprox          int  not null default 0,   -- envíos/mes estimados
+  envios_aprox          int  not null default 0,
   lugar_retiro          text not null default '',
   tipo_producto         text not null default '',
   interes               text,
-  -- Insumos de clasificación (por qué cayó en su bucket)
   marca_reconocida      boolean not null default false,
   quiere_fulfillment    boolean not null default false,
   bucket                bucket not null,
   estado                estado_oportunidad not null default 'interesado',
   origen                origen_oportunidad not null default 'manual',
-  -- Timestamps del flujo (alimentan objetivo, cierre y tiempo-a-cierre)
   declarada_at          timestamptz not null default now(),
   reunion_coordinada_at timestamptz,
   reunion_efectiva_at   timestamptz,               -- hito que cuenta al objetivo
-  cierre_at             timestamptz,               -- solo si estado = cierre_ganado
+  cierre_at             timestamptz,
   perdida_motivo        text,
   created_at            timestamptz not null default now()
 );
@@ -85,7 +85,6 @@ create table oportunidad_eventos (
 );
 
 -- ───────────────────────── Base de clientes ─────────────────────────
--- Activos, ex-clientes (con motivo de baja) y prospección. Materia prima IA.
 create table clientes (
   id            uuid primary key default gen_random_uuid(),
   nombre        text not null,
@@ -93,7 +92,7 @@ create table clientes (
   envios_mes    int not null default 0,
   bucket        bucket not null,
   vendedor_id   uuid references vendedores(id) on delete set null,
-  motivo_baja   motivo_baja,                        -- solo ex_cliente
+  motivo_baja   motivo_baja,
   nota          text not null default '',
   created_at    timestamptz not null default now()
 );
@@ -105,21 +104,18 @@ create table contexto_ia (
   updated_at     timestamptz not null default now(),
   constraint contexto_ia_singleton check (id = 1)
 );
-
 create table fuentes_ia (
-  key    text primary key,                          -- maps|web|base|...
+  key    text primary key,
   label  text not null,
   activa boolean not null default true,
   orden  int not null default 0
 );
-
 create table reglas_ia (
   id     uuid primary key default gen_random_uuid(),
   tipo   text not null check (tipo in ('evitar', 'priorizar')),
   texto  text not null,
   orden  int not null default 0
 );
-
 create table contexto_vendedor (
   vendedor_id uuid primary key references vendedores(id) on delete cascade,
   foco        text not null default '',
@@ -134,19 +130,26 @@ create index idx_objetivos_vp   on objetivos(vendedor_id, periodo);
 create index idx_clientes_seg   on clientes(segmento);
 create index idx_evt_op         on oportunidad_eventos(oportunidad_id, created_at);
 
--- ─────────── Trigger: crear fila de vendedor al registrarse ───────────
-create or replace function handle_new_vendedor()
+-- ─────────── Trigger: enganchar vendedor al registrarse (por email) ───────────
+-- Si existe un vendedor con ese email sin cuenta, lo linkea. Si no, crea uno
+-- nuevo con rol 'vendedor'. El admin se define con un UPDATE tras registrarse.
+create or replace function link_vendedor_on_signup()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.vendedores (id, email, nombre)
-  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nombre', ''));
+  update public.vendedores
+     set user_id = new.id
+   where lower(email) = lower(new.email) and user_id is null;
+  if not found then
+    insert into public.vendedores (user_id, email, nombre, rol)
+    values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nombre', ''), 'vendedor');
+  end if;
   return new;
 end;
 $$;
 
-create trigger on_auth_vendedor_created
+create trigger on_auth_user_created_ventas
   after insert on auth.users
-  for each row execute function handle_new_vendedor();
+  for each row execute function link_vendedor_on_signup();

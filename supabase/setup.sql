@@ -1,3 +1,252 @@
+-- =============================================================
+-- Welivery Comercial — SETUP COMPLETO (schema + RLS + seed demo)
+-- Correr UNA vez en el SQL Editor de Supabase (proyecto ventas).
+-- Genera tablas, políticas RLS y datos de demo (4 vendedores + pipeline).
+-- =============================================================
+
+-- ============ 1) SCHEMA ============
+-- Welivery Comercial — Esquema. Proyecto Supabase independiente.
+-- Espejo de src/lib/types.ts. RLS y seed en archivos separados
+-- (o todo junto en setup.sql).
+
+-- ───────────────────────────── Enums ─────────────────────────────
+create type rol_ventas         as enum ('admin', 'vendedor');
+create type bucket             as enum ('estrategico', 'fulfillment', 'mediano');
+create type estado_oportunidad as enum (
+  'interesado', 'reunion_coordinada', 'reunion_efectiva',
+  'propuesta_enviada', 'seguimiento', 'cierre_ganado', 'perdido'
+);
+create type origen_oportunidad as enum ('manual', 'ia', 'referido');
+create type segmento_cliente   as enum ('activo', 'ex_cliente', 'prospeccion');
+create type motivo_baja        as enum ('precio', 'servicio', 'cerro', 'deuda', 'otro');
+
+-- ───────────────────── Config de instancia (país) ─────────────────────
+create table config_ventas (
+  id                   int primary key default 1,
+  pais                 text not null default 'CL',
+  umbral_estrategico   int  not null default 1000,   -- envíos/mes ≥ → estratégico
+  updated_at           timestamptz not null default now(),
+  constraint config_ventas_singleton check (id = 1)
+);
+
+-- ───────────────────────────── Vendedores ─────────────────────────────
+-- Registro comercial DESACOPLADO de la cuenta de login: `user_id` (nullable)
+-- enlaza con auth.users cuando la persona se registra. Así se pueden cargar
+-- vendedores y su pipeline antes de que tengan login, y el enganche se hace
+-- por email al registrarse (ver trigger abajo).
+create table vendedores (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid unique references auth.users(id) on delete set null,
+  nombre     text not null default '',
+  email      text not null,
+  rol        rol_ventas not null default 'vendedor',
+  zona       text not null default '',
+  activo     boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index idx_vendedores_user on vendedores(user_id);
+
+-- ───────────────────────────── Objetivos ─────────────────────────────
+create table objetivos (
+  id                  uuid primary key default gen_random_uuid(),
+  vendedor_id         uuid not null references vendedores(id) on delete cascade,
+  periodo             text not null,               -- 'YYYY-MM'
+  reuniones_efectivas int  not null default 0,
+  mix_estrategico     int  not null default 40,
+  mix_fulfillment     int  not null default 30,
+  mix_mediano         int  not null default 30,
+  created_at          timestamptz not null default now(),
+  unique (vendedor_id, periodo),
+  constraint mix_suma_100 check (mix_estrategico + mix_fulfillment + mix_mediano = 100)
+);
+
+-- ───────────────────────────── Oportunidades ─────────────────────────────
+create table oportunidades (
+  id                    uuid primary key default gen_random_uuid(),
+  vendedor_id           uuid references vendedores(id) on delete set null,
+  ecommerce             text not null,
+  sitio                 text,
+  envios_aprox          int  not null default 0,
+  lugar_retiro          text not null default '',
+  tipo_producto         text not null default '',
+  interes               text,
+  marca_reconocida      boolean not null default false,
+  quiere_fulfillment    boolean not null default false,
+  bucket                bucket not null,
+  estado                estado_oportunidad not null default 'interesado',
+  origen                origen_oportunidad not null default 'manual',
+  declarada_at          timestamptz not null default now(),
+  reunion_coordinada_at timestamptz,
+  reunion_efectiva_at   timestamptz,               -- hito que cuenta al objetivo
+  cierre_at             timestamptz,
+  perdida_motivo        text,
+  created_at            timestamptz not null default now()
+);
+
+create table oportunidad_eventos (
+  id              uuid primary key default gen_random_uuid(),
+  oportunidad_id  uuid not null references oportunidades(id) on delete cascade,
+  titulo          text not null,
+  detalle         text,
+  created_at      timestamptz not null default now()
+);
+
+-- ───────────────────────── Base de clientes ─────────────────────────
+create table clientes (
+  id            uuid primary key default gen_random_uuid(),
+  nombre        text not null,
+  segmento      segmento_cliente not null,
+  envios_mes    int not null default 0,
+  bucket        bucket not null,
+  vendedor_id   uuid references vendedores(id) on delete set null,
+  motivo_baja   motivo_baja,
+  nota          text not null default '',
+  created_at    timestamptz not null default now()
+);
+
+-- ───────────────────── Contexto para la IA (editable) ─────────────────────
+create table contexto_ia (
+  id             int primary key default 1,
+  general        text not null default '',
+  updated_at     timestamptz not null default now(),
+  constraint contexto_ia_singleton check (id = 1)
+);
+create table fuentes_ia (
+  key    text primary key,
+  label  text not null,
+  activa boolean not null default true,
+  orden  int not null default 0
+);
+create table reglas_ia (
+  id     uuid primary key default gen_random_uuid(),
+  tipo   text not null check (tipo in ('evitar', 'priorizar')),
+  texto  text not null,
+  orden  int not null default 0
+);
+create table contexto_vendedor (
+  vendedor_id uuid primary key references vendedores(id) on delete cascade,
+  foco        text not null default '',
+  texto       text not null default ''
+);
+
+-- ───────────────────────────── Índices ─────────────────────────────
+create index idx_op_vendedor    on oportunidades(vendedor_id);
+create index idx_op_estado      on oportunidades(estado);
+create index idx_op_efectiva    on oportunidades(reunion_efectiva_at);
+create index idx_objetivos_vp   on objetivos(vendedor_id, periodo);
+create index idx_clientes_seg   on clientes(segmento);
+create index idx_evt_op         on oportunidad_eventos(oportunidad_id, created_at);
+
+-- ─────────── Trigger: enganchar vendedor al registrarse (por email) ───────────
+-- Si existe un vendedor con ese email sin cuenta, lo linkea. Si no, crea uno
+-- nuevo con rol 'vendedor'. El admin se define con un UPDATE tras registrarse.
+create or replace function link_vendedor_on_signup()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.vendedores
+     set user_id = new.id
+   where lower(email) = lower(new.email) and user_id is null;
+  if not found then
+    insert into public.vendedores (user_id, email, nombre, rol)
+    values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nombre', ''), 'vendedor');
+  end if;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created_ventas
+  after insert on auth.users
+  for each row execute function link_vendedor_on_signup();
+
+-- ============ 2) RLS ============
+-- Welivery Comercial — Row Level Security.
+-- Dos roles: admin (gerencia comercial) ve y edita todo; vendedor ve/gestiona
+-- SOLO sus oportunidades y objetivos, y la base/contexto en lectura.
+
+-- ─────────────────────── Helpers (sin recursión) ───────────────────────
+-- vendedor_id del usuario logueado (enlazado por user_id).
+create or replace function current_vendedor_id()
+returns uuid
+language sql stable security definer set search_path = public
+as $$ select id from public.vendedores where user_id = auth.uid(); $$;
+
+create or replace function current_rol_ventas()
+returns rol_ventas
+language sql stable security definer set search_path = public
+as $$ select rol from public.vendedores where user_id = auth.uid(); $$;
+
+create or replace function is_admin_ventas()
+returns boolean language sql stable
+as $$ select current_rol_ventas() = 'admin'; $$;
+
+-- Habilitar RLS
+alter table config_ventas        enable row level security;
+alter table vendedores           enable row level security;
+alter table objetivos            enable row level security;
+alter table oportunidades        enable row level security;
+alter table oportunidad_eventos  enable row level security;
+alter table clientes             enable row level security;
+alter table contexto_ia          enable row level security;
+alter table fuentes_ia           enable row level security;
+alter table reglas_ia            enable row level security;
+alter table contexto_vendedor    enable row level security;
+
+-- config_ventas: staff lee; admin edita.
+create policy "config: staff lee" on config_ventas for select using (auth.uid() is not null);
+create policy "config: admin edita" on config_ventas for all using (is_admin_ventas()) with check (is_admin_ventas());
+
+-- vendedores: staff autenticado lee todos (el vendedor necesita ver el equipo en
+-- algunos lugares; los datos sensibles se acotan por tabla). Admin gestiona.
+create policy "vend: staff lee" on vendedores for select using (auth.uid() is not null);
+create policy "vend: admin gestiona" on vendedores for all using (is_admin_ventas()) with check (is_admin_ventas());
+-- El vendedor puede actualizar su propia ficha (nombre/zona), no su rol.
+create policy "vend: edita propia" on vendedores for update
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- objetivos: el vendedor ve el suyo; admin ve/edita todos.
+create policy "obj: propio o admin" on objetivos for select
+  using (vendedor_id = current_vendedor_id() or is_admin_ventas());
+create policy "obj: admin edita" on objetivos for all
+  using (is_admin_ventas()) with check (is_admin_ventas());
+
+-- oportunidades: el vendedor gestiona las suyas; admin ve/gestiona todas.
+create policy "op: propias select" on oportunidades for select
+  using (vendedor_id = current_vendedor_id() or is_admin_ventas());
+create policy "op: propias insert" on oportunidades for insert
+  with check (vendedor_id = current_vendedor_id() or is_admin_ventas());
+create policy "op: propias update" on oportunidades for update
+  using (vendedor_id = current_vendedor_id() or is_admin_ventas())
+  with check (vendedor_id = current_vendedor_id() or is_admin_ventas());
+create policy "op: admin delete" on oportunidades for delete using (is_admin_ventas());
+
+-- eventos: visibles/insertables si la oportunidad es del vendedor o es admin.
+create policy "evt: ver" on oportunidad_eventos for select using (
+  is_admin_ventas() or exists (
+    select 1 from oportunidades o
+    where o.id = oportunidad_eventos.oportunidad_id and o.vendedor_id = current_vendedor_id()));
+create policy "evt: agregar" on oportunidad_eventos for insert with check (
+  is_admin_ventas() or exists (
+    select 1 from oportunidades o
+    where o.id = oportunidad_eventos.oportunidad_id and o.vendedor_id = current_vendedor_id()));
+
+-- clientes: todo el equipo lee (insumo de leads); admin gestiona.
+create policy "cli: staff lee" on clientes for select using (auth.uid() is not null);
+create policy "cli: admin gestiona" on clientes for all using (is_admin_ventas()) with check (is_admin_ventas());
+
+-- contexto IA: staff lee; admin edita.
+create policy "ctx: staff lee" on contexto_ia for select using (auth.uid() is not null);
+create policy "ctx: admin edita" on contexto_ia for all using (is_admin_ventas()) with check (is_admin_ventas());
+create policy "fuentes: staff lee" on fuentes_ia for select using (auth.uid() is not null);
+create policy "fuentes: admin edita" on fuentes_ia for all using (is_admin_ventas()) with check (is_admin_ventas());
+create policy "reglas: staff lee" on reglas_ia for select using (auth.uid() is not null);
+create policy "reglas: admin edita" on reglas_ia for all using (is_admin_ventas()) with check (is_admin_ventas());
+create policy "ctxv: staff lee" on contexto_vendedor for select using (auth.uid() is not null);
+create policy "ctxv: admin edita" on contexto_vendedor for all using (is_admin_ventas()) with check (is_admin_ventas());
+
+-- ============ 3) SEED (demo) ============
 -- Welivery Comercial — Seed de demo (generado desde el mock).
 -- Idempotente: usa on conflict do nothing donde hay PK fija.
 begin;
