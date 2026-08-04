@@ -300,13 +300,15 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-opus-5",
-        max_tokens: 10000,
+        // Modelo económico (Haiku) para acotar costo. Solo web_search (los
+        // snippets son chicos); NO usamos web_fetch porque leer páginas enteras
+        // dispara el consumo de tokens. Alcanza para traer empresas reales +
+        // sitio; el resto de datos se completa entrando al sitio a mano.
+        model: "claude-haiku-4-5",
+        max_tokens: 4000,
         stream: true,
-        output_config: { effort: "low" },
         tools: [
-          { type: "web_search_20260209", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "CL" } },
-          { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 },
+          { type: "web_search_20250305", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "CL" } },
         ],
         system,
         messages: [{ role: "user", content: userMsg }],

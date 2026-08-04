@@ -35,53 +35,51 @@ export function VendedorLeads() {
   const { vendedor } = useVentas()
   const [sugeridos, setSugeridos] = useState<LeadSugerido[]>([])
   const [ideas, setIdeas] = useState<IdeaConversacion[]>([])
-  const [cargando, setCargando] = useState(true)
+  const [cargando, setCargando] = useState(false)
+  const [yaBusco, setYaBusco] = useState(false)
   const [mock, setMock] = useState(false)
   const [errorIa, setErrorIa] = useState<string | null>(null)
   const [status, setStatus] = useState("Analizando…")
   const [creadas, setCreadas] = useState<Record<string, "creando" | "ok" | "error">>({})
 
   const sinVendedor = !vendedor.id
-  // Evita re-disparar la búsqueda (cara) por re-renders o refresh de sesión:
-  // la carga automática ocurre una sola vez por vendedor. "Regenerar" es aparte.
-  const autoCargado = useRef<string | null>(null)
+  const vivoRef = useRef(true)
 
+  // La búsqueda con IA NUNCA se dispara sola (gasta tokens de la API): solo
+  // corre cuando la persona aprieta el botón. Al cambiar de vendedor se limpian
+  // los resultados anteriores, pero NO se vuelve a llamar.
   const generar = useCallback(async () => {
     if (!vendedor.id) return
     setCargando(true)
+    setYaBusco(true)
     setStatus("Analizando…")
     try {
-      const r = await generarLeads(vendedor.id, setStatus)
+      const r = await generarLeads(vendedor.id, (m) => vivoRef.current && setStatus(m))
+      if (!vivoRef.current) return
       setSugeridos(r.sugeridos)
       setIdeas(r.ideas)
       setMock(r.usandoMock)
       setErrorIa(r.error ?? null)
     } finally {
-      setCargando(false)
+      if (vivoRef.current) setCargando(false)
     }
   }, [vendedor.id])
 
   useEffect(() => {
-    if (!vendedor.id) {
-      setCargando(false)
-      return
-    }
-    if (autoCargado.current === vendedor.id) return // ya cargado para este vendedor
-    autoCargado.current = vendedor.id
-    let vivo = true
-    setCargando(true)
-    setStatus("Analizando…")
-    generarLeads(vendedor.id, (m) => vivo && setStatus(m)).then((r) => {
-      if (!vivo) return
-      setSugeridos(r.sugeridos)
-      setIdeas(r.ideas)
-      setMock(r.usandoMock)
-      setErrorIa(r.error ?? null)
-      setCargando(false)
-    })
+    vivoRef.current = true
     return () => {
-      vivo = false
+      vivoRef.current = false
     }
+  }, [])
+
+  // Al cambiar de vendedor, limpiar (sin llamar a la IA).
+  useEffect(() => {
+    setSugeridos([])
+    setIdeas([])
+    setYaBusco(false)
+    setMock(false)
+    setErrorIa(null)
+    setCargando(false)
   }, [vendedor.id])
 
   async function crear(l: LeadSugerido) {
@@ -118,7 +116,7 @@ export function VendedorLeads() {
           <h2 className="text-[17px] font-semibold text-white">Asistente de leads</h2>
           <p className="mt-1 max-w-[62ch] text-[13px] text-[#c6d0e0]">
             Cruzo tu base (activos, ex-clientes y prospección), el contexto que cargó el admin y tu objetivo del
-            mes para sugerirte e-commerces que encajan — priorizando el tipo de cliente que te falta.
+            mes, y busco en la web e-commerces que encajan — priorizando el tipo de cliente que te falta.
           </p>
         </div>
         <Button
@@ -126,7 +124,8 @@ export function VendedorLeads() {
           disabled={cargando || sinVendedor}
           className="ml-auto shrink-0 bg-mint text-navy hover:bg-mint/90"
         >
-          <RefreshCw className={cargando ? "animate-spin" : undefined} /> {cargando ? "Analizando…" : "Regenerar"}
+          <RefreshCw className={cargando ? "animate-spin" : undefined} />{" "}
+          {cargando ? "Buscando…" : yaBusco ? "Buscar de nuevo" : "Buscar leads con IA"}
         </Button>
       </div>
 
@@ -152,6 +151,23 @@ export function VendedorLeads() {
         </Card>
       )}
 
+      {!sinVendedor && !yaBusco && !cargando && (
+        <Card className="mt-4 flex flex-col items-center p-8 text-center">
+          <span className="grid size-12 place-items-center rounded-xl bg-mist">
+            <Sparkles size={22} className="text-blue" />
+          </span>
+          <p className="mt-3 text-[15px] font-semibold text-navy">Buscá nuevos leads con IA</p>
+          <p className="mx-auto mt-1.5 max-w-[56ch] text-[13px] text-slate">
+            Al apretar el botón, la IA sale a buscar e-commerces chilenos reales en la web y te arma sugerencias
+            con datos de contacto. Cada búsqueda usa la API de Claude (tiene un costo por uso), por eso se ejecuta
+            solo cuando vos lo pedís.
+          </p>
+          <Button onClick={generar} variant="blue" className="mt-4">
+            <Sparkles /> Buscar leads con IA
+          </Button>
+        </Card>
+      )}
+
       {mock && !cargando && (
         <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-[#FCF3E2] p-3 text-[12px] text-[#8a6416]">
           <Sparkles size={15} className="mt-0.5 shrink-0" />
@@ -170,7 +186,7 @@ export function VendedorLeads() {
         </div>
       )}
 
-      {!sinVendedor && (
+      {!sinVendedor && yaBusco && (
         <>
       <SectionTitle titulo="Nuevos potenciales sugeridos" hint="Priorizados por tu mezcla faltante" />
       {cargando ? (
