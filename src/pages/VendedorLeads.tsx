@@ -35,6 +35,7 @@ export function VendedorLeads() {
   const [ideas, setIdeas] = useState<IdeaConversacion[]>([])
   const [cargando, setCargando] = useState(true)
   const [mock, setMock] = useState(false)
+  const [errorIa, setErrorIa] = useState<string | null>(null)
   const [creadas, setCreadas] = useState<Record<string, "creando" | "ok" | "error">>({})
 
   const generar = useCallback(async () => {
@@ -44,6 +45,7 @@ export function VendedorLeads() {
       setSugeridos(r.sugeridos)
       setIdeas(r.ideas)
       setMock(r.usandoMock)
+      setErrorIa(r.error ?? null)
     } finally {
       setCargando(false)
     }
@@ -57,6 +59,7 @@ export function VendedorLeads() {
       setSugeridos(r.sugeridos)
       setIdeas(r.ideas)
       setMock(r.usandoMock)
+      setErrorIa(r.error ?? null)
       setCargando(false)
     })
     return () => {
@@ -113,11 +116,18 @@ export function VendedorLeads() {
       {mock && !cargando && (
         <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-[#FCF3E2] p-3 text-[12px] text-[#8a6416]">
           <Sparkles size={15} className="mt-0.5 shrink-0" />
-          <p className="leading-relaxed">
-            Estás viendo <b>sugerencias de demostración</b>. Para generar leads reales con IA hay que deployar la
-            Edge Function <code className="rounded bg-black/5 px-1">leads-ia</code> y cargar la key de Anthropic
-            (ver <code className="rounded bg-black/5 px-1">supabase/functions/README.md</code>).
-          </p>
+          <div className="leading-relaxed">
+            <p>
+              Estás viendo <b>sugerencias de demostración</b>. Para generar leads reales con IA hay que deployar la
+              Edge Function <code className="rounded bg-black/5 px-1">leads-ia</code> y cargar la key de Anthropic
+              (ver <code className="rounded bg-black/5 px-1">supabase/functions/README.md</code>).
+            </p>
+            {errorIa && (
+              <p className="mt-1.5 font-medium">
+                Detalle del error: <span className="font-normal">{errorIa}</span>
+              </p>
+            )}
+          </div>
         </div>
       )}
 

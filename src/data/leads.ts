@@ -37,23 +37,41 @@ export interface ResultadoLeads {
   sugeridos: LeadSugerido[]
   ideas: IdeaConversacion[]
   usandoMock: boolean // true si la IA no está disponible y mostramos el demo
+  error?: string // detalle del fallo (para diagnosticar sin DevTools)
 }
 
-// Llama a la Edge Function; ante cualquier fallo cae al mock (con aviso).
+// Intenta sacar el mensaje de error del cuerpo JSON de la Edge Function.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function detalleError(error: any): Promise<string> {
+  try {
+    if (error?.context && typeof error.context.json === "function") {
+      const b = await error.context.json()
+      if (b?.error) return b.detalle ? `${b.error} · ${b.detalle}` : b.error
+    }
+  } catch {
+    /* ignore */
+  }
+  return error?.message ?? "Error desconocido"
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// Llama a la Edge Function; ante cualquier fallo cae al mock (con aviso + detalle).
 export async function generarLeads(vendedorId: string): Promise<ResultadoLeads> {
   try {
     const { data, error } = await supabase.functions.invoke("leads-ia", {
       body: { vendedorId },
     })
-    if (error) throw error
-    if (!data || !Array.isArray(data.sugeridos)) throw new Error("Respuesta inesperada")
+    if (error) return { ...leadsMockData(), usandoMock: true, error: await detalleError(error) }
+    if (!data || !Array.isArray(data.sugeridos)) {
+      return { ...leadsMockData(), usandoMock: true, error: "La función respondió en un formato inesperado." }
+    }
     return {
       sugeridos: data.sugeridos as LeadSugerido[],
       ideas: (data.ideas ?? []) as IdeaConversacion[],
       usandoMock: false,
     }
-  } catch {
-    return { ...leadsMockData(), usandoMock: true }
+  } catch (e) {
+    return { ...leadsMockData(), usandoMock: true, error: e instanceof Error ? e.message : "Error de red" }
   }
 }
 

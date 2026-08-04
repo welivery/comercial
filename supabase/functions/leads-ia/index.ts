@@ -65,7 +65,7 @@ const SCHEMA = {
         properties: {
           nombre: { type: "string", description: "Nombre del e-commerce/empresa." },
           bucket: { type: "string", enum: ["estrategico", "fulfillment", "mediano"] },
-          fit: { type: "integer", minimum: 0, maximum: 100, description: "Encaje 0-100 con el objetivo del vendedor." },
+          fit: { type: "integer", description: "Encaje 0-100 con el objetivo del vendedor (número entero entre 0 y 100)." },
           reconquista: { type: "boolean", description: "true si es un ex-cliente a recuperar." },
           motivo: { type: "string", description: "2-3 frases: por qué encaja y por qué ahora (rioplatense/chileno, concreto)." },
           fuentes: {
@@ -268,7 +268,7 @@ ${pipelineTxt}
       body: JSON.stringify({
         model: "claude-opus-5",
         max_tokens: 8000,
-        thinking: { type: "adaptive" },
+        thinking: { type: "disabled" },
         output_config: { format: { type: "json_schema", schema: SCHEMA } },
         system,
         messages: [{ role: "user", content: userMsg }],
