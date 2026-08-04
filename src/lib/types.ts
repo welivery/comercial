@@ -95,6 +95,53 @@ export interface Cliente {
   nota: string
 }
 
+// ─────────────────────────────── Leads ───────────────────────────────
+// Un lead es un potencial cliente detectado (por IA en la web, o sembrado de
+// la base como ex-cliente a reconquistar). Persistente: el vendedor lo clasifica
+// pasándolo a oportunidad o rechazándolo con un motivo.
+export type LeadEstado = "nuevo" | "convertido" | "rechazado"
+export type LeadOrigen = "ia" | "base"
+export type MotivoRechazo =
+  | "no_interesado"
+  | "pocos_envios"
+  | "negocio_inactivo"
+  | "no_contesta"
+  | "ya_tiene_proveedor"
+  | "fuera_zona"
+  | "otro"
+
+export interface FuenteLead {
+  tipo: "maps" | "web" | "social" | "base" | "linkedin" | "tendencia"
+  detalle: string
+  url?: string | null
+}
+
+export interface Lead {
+  id: string
+  vendedor_id: string
+  nombre: string
+  iniciales: string
+  bucket: Bucket
+  fit: number // 0-100, encaje con el objetivo del vendedor
+  reconquista: boolean // true = ex-cliente a recuperar
+  motivo: string
+  web: string | null
+  telefono: string | null
+  email: string | null
+  fuentes: FuenteLead[]
+  origen: LeadOrigen
+  estado: LeadEstado
+  motivo_rechazo: MotivoRechazo | null
+  oportunidad_id: string | null
+  created_at: string
+}
+
+// Créditos de búsqueda con IA (por vendedor y mes).
+export interface CreditosLeads {
+  limite: number
+  usados: number
+}
+
 // Contexto que alimenta al asistente de leads (editable por el admin).
 export interface FuenteIA {
   key: string

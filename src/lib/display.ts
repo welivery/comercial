@@ -3,8 +3,23 @@
 import type {
   EstadoOportunidad,
   MotivoBaja,
+  MotivoRechazo,
   SegmentoCliente,
 } from "@/lib/types"
+
+// Motivos de rechazo de un lead (desplegable en la vista de leads).
+export const MOTIVOS_RECHAZO: { key: MotivoRechazo; label: string }[] = [
+  { key: "no_interesado", label: "No interesado" },
+  { key: "pocos_envios", label: "Pocos envíos" },
+  { key: "negocio_inactivo", label: "Negocio no activo" },
+  { key: "no_contesta", label: "No contesta" },
+  { key: "ya_tiene_proveedor", label: "Ya tiene proveedor" },
+  { key: "fuera_zona", label: "Fuera de zona" },
+  { key: "otro", label: "Otro" },
+]
+export const MOTIVO_RECHAZO_LABEL: Record<MotivoRechazo, string> = Object.fromEntries(
+  MOTIVOS_RECHAZO.map((m) => [m.key, m.label])
+) as Record<MotivoRechazo, string>
 
 // Fecha de referencia del período de demo (evita depender del reloj real en la
 // vista con datos de prueba). Al conectar datos reales se usa `new Date()`.

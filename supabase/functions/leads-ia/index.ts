@@ -1,9 +1,11 @@
 // Edge Function: asistente de leads con IA (Claude) — para vendedores/admin.
 //
-// Cruza la base de clientes (activos, ex-clientes, prospección) + el contexto
-// que carga el admin + el objetivo del vendedor y su pipeline actual, y le pide
-// a Claude que sugiera nuevos potenciales (priorizando la mezcla faltante) e
-// ideas de conversación para prospectos con reunión próxima o seguimiento.
+// Cruza la base de clientes + el contexto del admin + el objetivo del vendedor
+// y BUSCA EN LA WEB e-commerces chilenos reales nuevos (priorizando el bucket
+// faltante, sin repetir los que ya tiene). Deduplica y PERSISTE los leads en la
+// tabla `leads`. Respeta un límite mensual de búsquedas por vendedor (créditos).
+//
+// Streaming (NDJSON): manda avisos de progreso y al final {t:"done", insertados}.
 //
 // La API key de Anthropic vive del lado servidor (secret ANTHROPIC_API_KEY),
 // nunca en el cliente. SUPABASE_URL / ANON / SERVICE_ROLE los inyecta Supabase.
@@ -89,6 +91,23 @@ const slug = (n: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
 
+// Clave para deduplicar: dominio del sitio, o nombre normalizado.
+const claveLead = (nombre: string, web?: string | null): string => {
+  const dom = (web ?? "")
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .trim()
+  if (dom) return dom
+  return nombre
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
 const limpio = (v: unknown): string | null => {
   const s = typeof v === "string" ? v.trim() : ""
   if (!s || s.toLowerCase() === "null" || s === "-") return null
@@ -113,14 +132,6 @@ function normalizarSugeridos(arr: any[]): any[] {
   }))
 }
 
-function normalizarIdeas(arr: any[]): any[] {
-  return (arr ?? []).map((i: any) => ({
-    oportunidad: i.oportunidad,
-    bucket: i.bucket,
-    contexto: i.contexto,
-    angulos: Array.isArray(i.angulos) ? i.angulos : [],
-  }))
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
@@ -171,6 +182,28 @@ Deno.serve(async (req) => {
 
   const vend = vendRes.data
   if (!vend) return json(404, { error: "Vendedor no encontrado" })
+
+  // Créditos de IA: límite mensual por vendedor + leads ya existentes (dedup).
+  const [cfgRes, usoRes, leadsRes] = await Promise.all([
+    admin.from("config_ventas").select("leads_limite_mensual").eq("id", 1).maybeSingle(),
+    admin.from("leads_uso").select("usados").eq("vendedor_id", vendedorId).eq("periodo", periodo).maybeSingle(),
+    admin.from("leads").select("nombre, clave, vendedor_id"),
+  ])
+  const limite = (cfgRes.data as any)?.leads_limite_mensual ?? 15
+  const usados = (usoRes.data as any)?.usados ?? 0
+  if (usados >= limite) {
+    return json(429, {
+      error: `Alcanzaste el límite de ${limite} búsquedas con IA este mes. Pedile al admin que lo suba si necesitás más.`,
+      limite,
+      usados,
+    })
+  }
+  const leadsExistentes = (leadsRes.data ?? []) as any[]
+  const clavesGlobales = new Set(leadsExistentes.map((l) => l.clave)) // dedup entre todos los vendedores
+  const nombresPropios = leadsExistentes
+    .filter((l) => l.vendedor_id === vendedorId)
+    .map((l) => l.nombre)
+    .slice(0, 60)
 
   const clientes = (cliRes.data ?? []) as any[]
   const objetivo = objRes.data as any | null
@@ -263,9 +296,11 @@ ${listar(prospeccion, 25)}
 # Pipeline actual del vendedor (oportunidades abiertas)
 ${pipelineTxt}
 
+# NO repitas estas empresas (ya están en su lista de leads)
+${nombresPropios.length ? nombresPropios.map((n) => `- ${n}`).join("\n") : "(ninguna todavía)"}
+
 # Tarea
-1) Buscá en la web 3 a 6 e-commerces chilenos REALES para prospectar, priorizando el bucket faltante. Para cada uno confirmá que existe y sacá datos de contacto reales de sus fuentes. Podés incluir ex-clientes de la base a reconquistar (reconquista=true).
-2) Ideas de conversación para hasta 4 oportunidades del PIPELINE ACTUAL con reunión próxima o en seguimiento (2-3 ángulos accionables cada una). Si el pipeline está vacío, ideas=[].
+Buscá en la web 4 a 6 e-commerces chilenos REALES y NUEVOS para prospectar, priorizando el bucket que le falta al vendedor. Para cada uno confirmá que existe y sacá datos de contacto reales de sus fuentes (sitio y, si figuran, teléfono/email). No repitas ninguna de las empresas listadas arriba ni sus clientes activos.
 
 # Formato de salida
 Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json que contenga exactamente este objeto (sin texto después):
@@ -283,9 +318,6 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
       "email": "contacto@... o null (solo si es real)",
       "fuentes": [ { "tipo": "web|maps|social|linkedin|base|tendencia", "detalle": "qué es", "url": "https://... o null" } ]
     }
-  ],
-  "ideas": [
-    { "oportunidad": "Nombre del pipeline", "bucket": "estrategico|fulfillment|mediano", "contexto": "por qué ahora", "angulos": [ { "titulo": "Dolor detectado", "texto": "..." } ] }
   ]
 }
 \`\`\``
@@ -373,7 +405,53 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
         if (!parsed || !Array.isArray(parsed.sugeridos)) {
           send({ t: "error", m: "La IA no devolvió un JSON válido." })
         } else {
-          send({ t: "done", sugeridos: normalizarSugeridos(parsed.sugeridos), ideas: normalizarIdeas(parsed.ideas) })
+          send({ t: "status", m: "Guardando leads nuevos…" })
+          const norm = normalizarSugeridos(parsed.sugeridos)
+          // Dedup: descartar los que ya existan (por clave) en cualquier vendedor,
+          // y los repetidos dentro de esta misma tanda.
+          const vistos = new Set<string>()
+          const nuevos = norm
+            .map((s: any) => ({ ...s, clave: claveLead(s.nombre, s.web) }))
+            .filter((s: any) => {
+              if (!s.nombre || clavesGlobales.has(s.clave) || vistos.has(s.clave)) return false
+              vistos.add(s.clave)
+              return true
+            })
+
+          let insertados = 0
+          if (nuevos.length) {
+            const filas = nuevos.map((s: any) => ({
+              vendedor_id: vendedorId,
+              nombre: s.nombre,
+              clave: s.clave,
+              bucket: s.bucket,
+              fit: s.fit,
+              reconquista: !!s.reconquista,
+              motivo: s.motivo ?? "",
+              web: s.web,
+              telefono: s.telefono,
+              email: s.email,
+              fuentes: s.fuentes ?? [],
+              origen: "ia",
+              estado: "nuevo",
+            }))
+            const { error: insErr } = await admin
+              .from("leads")
+              .upsert(filas, { onConflict: "vendedor_id,clave", ignoreDuplicates: true })
+            if (insErr) {
+              send({ t: "error", m: `No se pudieron guardar los leads: ${insErr.message}` })
+              controller.close()
+              return
+            }
+            insertados = filas.length
+          }
+
+          // Sumar 1 al consumo del mes (cuenta la búsqueda, no los leads).
+          await admin
+            .from("leads_uso")
+            .upsert({ vendedor_id: vendedorId, periodo, usados: usados + 1 }, { onConflict: "vendedor_id,periodo" })
+
+          send({ t: "done", insertados, usados: usados + 1, limite })
         }
       } catch (e) {
         send({ t: "error", m: e instanceof Error ? e.message : "Error de streaming" })

@@ -38,12 +38,19 @@ contexto que carga el admin en Configuración, y el objetivo + pipeline del
 vendedor, y le pide a la **API de Claude** que sugiera nuevos e-commerces a
 prospectar (priorizando el bucket que le falta) e ideas de conversación.
 
-Usa las herramientas **`web_search` + `web_fetch`** de Claude para que las
-empresas sugeridas sean **reales y verificables** (nombre, sitio, teléfono,
-email extraídos de fuentes reales con su URL — nunca inventados). Esto agrega
-latencia (la IA sale a buscar, ~30-60s) y un costo extra de búsqueda web por
-llamada, acotado con `max_uses`. Si querés bajar costo/latencia, reducí
-`max_uses` en el `index.ts`.
+Usa la herramienta **`web_search`** de Claude para que las empresas sugeridas
+sean **reales** (nombre + sitio, y teléfono/email si figuran, nunca inventados).
+Modelo económico (**Haiku 4.5**) para acotar costo. **Deduplica y persiste** los
+leads en la tabla `leads`; respeta un **límite mensual de búsquedas por vendedor**
+(`config_ventas.leads_limite_mensual`, default 15) contado en `leads_uso`.
+
+> **Requisito**: correr antes la migración `supabase/leads.sql` (tabla `leads`,
+> `leads_uso`, columna de límite y RLS). Sin eso, la vista de leads muestra un
+> aviso para correrla.
+
+> **Costo / seguridad**: la búsqueda **nunca corre sola** — solo cuando el
+> vendedor aprieta el botón, y descuenta un crédito. Para ajustar costo/latencia,
+> cambiá `max_uses` o el modelo en `index.ts`.
 
 La **API key de Anthropic vive del lado servidor** (secret `ANTHROPIC_API_KEY`),
 nunca en el cliente.

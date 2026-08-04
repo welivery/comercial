@@ -8,8 +8,11 @@ import type {
   Bucket,
   Cliente,
   ContextoIA,
+  CreditosLeads,
   EstadoOportunidad,
+  Lead,
   MotivoBaja,
+  MotivoRechazo,
   Objetivo,
   Oportunidad,
   OportunidadEvento,
@@ -326,6 +329,159 @@ export async function crearClientesBulk(rows: ClienteInput[]): Promise<number> {
     insertados += lote.length
   }
   return insertados
+}
+
+// ─────────────────────────────── Leads ───────────────────────────────
+// Clave normalizada para deduplicar (dominio del sitio, o nombre sin acentos).
+function claveLead(nombre: string, web?: string | null): string {
+  const dom = (web ?? "")
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/.*$/, "")
+    .trim()
+  if (dom) return dom
+  return nombre
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function mapLead(r: any): Lead {
+  return {
+    id: r.id,
+    vendedor_id: r.vendedor_id,
+    nombre: r.nombre,
+    iniciales: iniciales(r.nombre),
+    bucket: r.bucket as Bucket,
+    fit: r.fit ?? 0,
+    reconquista: !!r.reconquista,
+    motivo: r.motivo ?? "",
+    web: r.web ?? null,
+    telefono: r.telefono ?? null,
+    email: r.email ?? null,
+    fuentes: Array.isArray(r.fuentes) ? r.fuentes : [],
+    origen: r.origen,
+    estado: r.estado,
+    motivo_rechazo: (r.motivo_rechazo ?? null) as MotivoRechazo | null,
+    oportunidad_id: r.oportunidad_id ?? null,
+    created_at: r.created_at,
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+export async function fetchLeads(vendedorId: string): Promise<Lead[]> {
+  if (!vendedorId) return []
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .eq("vendedor_id", vendedorId)
+    .order("created_at", { ascending: false })
+  return check(data, error).map(mapLead)
+}
+
+const MOTIVO_BAJA_TXT: Record<MotivoBaja, string> = {
+  precio: "precio",
+  servicio: "servicio",
+  cerro: "cierre del negocio",
+  deuda: "deuda",
+  otro: "otro motivo",
+}
+
+// Siembra como leads (origen 'base', reconquista) los ex-clientes del vendedor
+// que todavía no estén cargados. Costo cero (no usa IA). Idempotente.
+export async function sembrarLeadsBase(vendedorId: string): Promise<number> {
+  if (!vendedorId) return 0
+  const { data: ex, error } = await supabase
+    .from("clientes")
+    .select("nombre, bucket, envios_mes, motivo_baja, nota")
+    .eq("segmento", "ex_cliente")
+    .eq("vendedor_id", vendedorId)
+  if (error) throw new Error(error.message)
+  const filas = (ex ?? []).map((c) => {
+    const motivo =
+      `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
+      (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
+      (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+    return {
+      vendedor_id: vendedorId,
+      nombre: c.nombre,
+      clave: claveLead(c.nombre),
+      bucket: c.bucket,
+      fit: 70,
+      reconquista: true,
+      motivo,
+      fuentes: [{ tipo: "base", detalle: "Tu base · ex-cliente", url: null }],
+      origen: "base",
+      estado: "nuevo",
+    }
+  })
+  if (!filas.length) return 0
+  // Inserta ignorando los que ya existen (unique vendedor_id, clave).
+  const { error: insErr } = await supabase
+    .from("leads")
+    .upsert(filas, { onConflict: "vendedor_id,clave", ignoreDuplicates: true })
+  if (insErr) throw new Error(insErr.message)
+  return filas.length
+}
+
+export async function rechazarLead(id: string, motivo: MotivoRechazo): Promise<void> {
+  const { error } = await supabase
+    .from("leads")
+    .update({ estado: "rechazado", motivo_rechazo: motivo, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+// Vuelve un lead rechazado a "nuevo" (deshacer).
+export async function reactivarLead(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("leads")
+    .update({ estado: "nuevo", motivo_rechazo: null, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+// Crea la oportunidad a partir del lead + los datos que completa el vendedor,
+// y marca el lead como convertido (linkeado). Devuelve el id de la oportunidad.
+export async function convertirLead(
+  leadId: string,
+  i: OportunidadInput
+): Promise<string> {
+  const bucket = asignarBucket({
+    marca_reconocida: i.marca_reconocida,
+    envios_aprox: i.envios_aprox,
+    quiere_fulfillment: i.quiere_fulfillment,
+  })
+  const { data, error } = await supabase
+    .from("oportunidades")
+    .insert({ ...i, bucket, estado: "interesado" })
+    .select("id")
+    .single()
+  if (error) throw new Error(error.message)
+  const opId = (data as { id: string }).id
+  const { error: updErr } = await supabase
+    .from("leads")
+    .update({ estado: "convertido", oportunidad_id: opId, updated_at: new Date().toISOString() })
+    .eq("id", leadId)
+  if (updErr) throw new Error(updErr.message)
+  return opId
+}
+
+export async function fetchCreditosLeads(vendedorId: string, periodo: string): Promise<CreditosLeads> {
+  if (!vendedorId) return { limite: 0, usados: 0 }
+  const [cfg, uso] = await Promise.all([
+    supabase.from("config_ventas").select("leads_limite_mensual").eq("id", 1).maybeSingle(),
+    supabase.from("leads_uso").select("usados").eq("vendedor_id", vendedorId).eq("periodo", periodo).maybeSingle(),
+  ])
+  if (cfg.error) throw new Error(cfg.error.message)
+  return {
+    limite: cfg.data?.leads_limite_mensual ?? 15,
+    usados: uso.data?.usados ?? 0,
+  }
 }
 
 // Ensambla el contexto IA de sus 4 tablas.

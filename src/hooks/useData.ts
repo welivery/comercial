@@ -5,7 +5,9 @@ import { useCallback, useEffect, useState } from "react"
 import {
   fetchClientes,
   fetchContexto,
+  fetchCreditosLeads,
   fetchEventos,
+  fetchLeads,
   fetchObjetivos,
   fetchOportunidad,
   fetchOportunidades,
@@ -56,3 +58,10 @@ export const useEventos = (oportunidadId: string | undefined) =>
   useAsync(() => (oportunidadId ? fetchEventos(oportunidadId) : Promise.resolve([])), [oportunidadId])
 export const useClientes = () => useAsync(() => fetchClientes(), [])
 export const useContexto = () => useAsync(() => fetchContexto(), [])
+export const useLeads = (vendedorId: string | undefined) =>
+  useAsync(() => (vendedorId ? fetchLeads(vendedorId) : Promise.resolve([])), [vendedorId])
+export const useCreditosLeads = (vendedorId: string | undefined, periodo: string) =>
+  useAsync(
+    () => (vendedorId ? fetchCreditosLeads(vendedorId, periodo) : Promise.resolve({ limite: 0, usados: 0 })),
+    [vendedorId, periodo]
+  )
