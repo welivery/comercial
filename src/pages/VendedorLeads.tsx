@@ -59,8 +59,9 @@ export function VendedorLeads() {
   const rechazados = leads.filter((l) => l.estado === "rechazado")
 
   const [buscando, setBuscando] = useState(false)
+  const [trayendo, setTrayendo] = useState(false)
   const [status, setStatus] = useState("Analizando…")
-  const [aviso, setAviso] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null)
+  const [aviso, setAviso] = useState<{ tipo: "ok" | "error" | "info"; texto: string } | null>(null)
   const [verClasificados, setVerClasificados] = useState(false)
 
   // Rechazo inline
@@ -123,6 +124,30 @@ export function VendedorLeads() {
       }
     } finally {
       if (vivoRef.current) setBuscando(false)
+    }
+  }
+
+  // Traer leads de la base (ex-clientes + prospectos) — sin IA, sin costo.
+  async function traerDeBase() {
+    if (!vendedor.id || trayendo) return
+    setTrayendo(true)
+    setAviso(null)
+    try {
+      const n = await sembrarLeadsBase(vendedor.id)
+      if (n > 0) {
+        setAviso({ tipo: "ok", texto: `Se agregaron ${n} lead${n === 1 ? "" : "s"} de tu base.` })
+        reload()
+      } else {
+        setAviso({
+          tipo: "info",
+          texto:
+            "No hay ex-clientes ni prospectos en tu base asignados a este vendedor (o ya están todos cargados). Podés asignarlos en Base de clientes.",
+        })
+      }
+    } catch (e) {
+      setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo traer de la base" })
+    } finally {
+      setTrayendo(false)
     }
   }
 
@@ -212,19 +237,30 @@ export function VendedorLeads() {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
-          <Button
-            onClick={buscar}
-            disabled={buscando || sinVendedor || sinCreditos}
-            className="bg-mint text-navy hover:bg-mint/90"
-          >
-            <RefreshCw className={buscando ? "animate-spin" : undefined} />
-            {buscando ? "Buscando…" : "Buscar con IA"}
-          </Button>
-          {!sinVendedor && limite > 0 && (
-            <span className="text-[11px] text-[#c6d0e0]">
-              Búsquedas IA: <b className="text-white">{usados}/{limite}</b> este mes
-            </span>
-          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button
+              onClick={traerDeBase}
+              disabled={trayendo || sinVendedor}
+              className="border border-white/25 bg-white/10 text-white hover:bg-white/20"
+            >
+              <Building2 className={trayendo ? "animate-pulse" : undefined} />
+              {trayendo ? "Trayendo…" : "Traer de mi base"}
+            </Button>
+            <Button
+              onClick={buscar}
+              disabled={buscando || sinVendedor || sinCreditos}
+              className="bg-mint text-navy hover:bg-mint/90"
+            >
+              <RefreshCw className={buscando ? "animate-spin" : undefined} />
+              {buscando ? "Buscando…" : "Buscar con IA"}
+            </Button>
+          </div>
+          <span className="text-[11px] text-[#c6d0e0]">
+            “Traer de mi base” es gratis.{" "}
+            {!sinVendedor && limite > 0 && (
+              <>Búsquedas IA: <b className="text-white">{usados}/{limite}</b> este mes</>
+            )}
+          </span>
         </div>
       </div>
 
@@ -242,7 +278,9 @@ export function VendedorLeads() {
             "mt-3 rounded-xl border px-3.5 py-2.5 text-[12.5px] " +
             (aviso.tipo === "ok"
               ? "border-success/30 bg-[#E4F5EC] text-success"
-              : "border-error/30 bg-[#FBE2E2] text-error")
+              : aviso.tipo === "info"
+                ? "border-blue/25 bg-[#EEF3FE] text-blue"
+                : "border-error/30 bg-[#FBE2E2] text-error")
           }
         >
           {aviso.texto}
@@ -290,9 +328,18 @@ export function VendedorLeads() {
                 <Sparkles size={20} className="text-blue" />
               </span>
               <p className="mt-3 text-[14px] font-semibold text-navy">No tenés leads sin clasificar</p>
-              <p className="mx-auto mt-1 max-w-[52ch] text-[13px] text-slate">
-                Apretá <b>Buscar con IA</b> para sumar potenciales nuevos desde la web (usa un crédito).
+              <p className="mx-auto mt-1 max-w-[54ch] text-[13px] text-slate">
+                Usá <b>Traer de mi base</b> para sumar tus ex-clientes y prospectos (gratis), o{" "}
+                <b>Buscar con IA</b> para encontrar e-commerces nuevos en la web (usa un crédito).
               </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button variant="outline" onClick={traerDeBase} disabled={trayendo}>
+                  <Building2 /> {trayendo ? "Trayendo…" : "Traer de mi base"}
+                </Button>
+                <Button variant="blue" onClick={buscar} disabled={buscando || sinCreditos}>
+                  <Sparkles /> Buscar con IA
+                </Button>
+              </div>
             </Card>
           ) : (
             <div className="grid gap-3">

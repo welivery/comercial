@@ -391,36 +391,54 @@ const MOTIVO_BAJA_TXT: Record<MotivoBaja, string> = {
   otro: "otro motivo",
 }
 
-// Siembra como leads (origen 'base', reconquista) los ex-clientes del vendedor
-// que todavía no estén cargados. Costo cero (no usa IA). Idempotente.
+// Siembra como leads (origen 'base') los ex-clientes (reconquista) y prospectos
+// del vendedor que todavía no estén cargados. Costo cero (no usa IA). Idempotente.
+// Devuelve cuántos leads NUEVOS se agregaron.
 export async function sembrarLeadsBase(vendedorId: string): Promise<number> {
   if (!vendedorId) return 0
-  const { data: ex, error } = await supabase
-    .from("clientes")
-    .select("nombre, bucket, envios_mes, motivo_baja, nota")
-    .eq("segmento", "ex_cliente")
-    .eq("vendedor_id", vendedorId)
-  if (error) throw new Error(error.message)
-  const filas = (ex ?? []).map((c) => {
-    const motivo =
-      `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
-      (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
-      (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
-    return {
-      vendedor_id: vendedorId,
-      nombre: c.nombre,
-      clave: claveLead(c.nombre),
-      bucket: c.bucket,
-      fit: 70,
-      reconquista: true,
-      motivo,
-      fuentes: [{ tipo: "base", detalle: "Tu base · ex-cliente", url: null }],
-      origen: "base",
-      estado: "nuevo",
-    }
-  })
+  const [baseRes, leadsRes] = await Promise.all([
+    supabase
+      .from("clientes")
+      .select("nombre, segmento, bucket, envios_mes, motivo_baja, nota")
+      .in("segmento", ["ex_cliente", "prospeccion"])
+      .eq("vendedor_id", vendedorId),
+    supabase.from("leads").select("clave").eq("vendedor_id", vendedorId),
+  ])
+  if (baseRes.error) throw new Error(baseRes.error.message)
+  const yaHay = new Set((leadsRes.data ?? []).map((l: { clave: string }) => l.clave))
+
+  const vistos = new Set<string>()
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const filas = (baseRes.data ?? [])
+    .map((c: any) => {
+      const esEx = c.segmento === "ex_cliente"
+      const motivo = esEx
+        ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
+          (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
+          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+        : `Prospecto de tu base.` +
+          (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
+          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+      return {
+        vendedor_id: vendedorId,
+        nombre: c.nombre,
+        clave: claveLead(c.nombre),
+        bucket: c.bucket,
+        fit: esEx ? 70 : 60,
+        reconquista: esEx,
+        motivo,
+        fuentes: [{ tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null }],
+        origen: "base",
+        estado: "nuevo",
+      }
+    })
+    .filter((f: any) => {
+      if (yaHay.has(f.clave) || vistos.has(f.clave)) return false
+      vistos.add(f.clave)
+      return true
+    })
+  /* eslint-enable @typescript-eslint/no-explicit-any */
   if (!filas.length) return 0
-  // Inserta ignorando los que ya existen (unique vendedor_id, clave).
   const { error: insErr } = await supabase
     .from("leads")
     .upsert(filas, { onConflict: "vendedor_id,clave", ignoreDuplicates: true })
