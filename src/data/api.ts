@@ -391,17 +391,22 @@ const MOTIVO_BAJA_TXT: Record<MotivoBaja, string> = {
   otro: "otro motivo",
 }
 
-// Siembra como leads (origen 'base') los ex-clientes (reconquista) y prospectos
-// del vendedor que todavía no estén cargados. Costo cero (no usa IA). Idempotente.
-// Devuelve cuántos leads NUEVOS se agregaron.
-export async function sembrarLeadsBase(vendedorId: string): Promise<number> {
+// Tamaño del "cupo" diario: cuántos leads de la base trae cada vez.
+export const LOTE_LEADS_BASE = 20
+
+// Trae el próximo lote (~20) de leads desde la base: ex-clientes (reconquista) y
+// prospectos, propios del vendedor o SIN asignar, priorizando los de mayor
+// volumen. No repite los que ya trajo. Costo cero (no usa IA). Devuelve cuántos
+// se agregaron.
+export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BASE): Promise<number> {
   if (!vendedorId) return 0
   const [baseRes, leadsRes] = await Promise.all([
     supabase
       .from("clientes")
       .select("nombre, segmento, bucket, envios_mes, motivo_baja, nota")
       .in("segmento", ["ex_cliente", "prospeccion"])
-      .eq("vendedor_id", vendedorId),
+      .or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
+      .order("envios_mes", { ascending: false }),
     supabase.from("leads").select("clave").eq("vendedor_id", vendedorId),
   ])
   if (baseRes.error) throw new Error(baseRes.error.message)
@@ -437,6 +442,7 @@ export async function sembrarLeadsBase(vendedorId: string): Promise<number> {
       vistos.add(f.clave)
       return true
     })
+    .slice(0, lote) // solo el próximo lote
   /* eslint-enable @typescript-eslint/no-explicit-any */
   if (!filas.length) return 0
   const { error: insErr } = await supabase

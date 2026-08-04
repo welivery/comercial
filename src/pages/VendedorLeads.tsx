@@ -76,7 +76,6 @@ export function VendedorLeads() {
 
   const sinVendedor = !vendedor.id
   const vivoRef = useRef(true)
-  const sembrado = useRef<string | null>(null)
 
   const limite = creditos?.limite ?? 0
   const usados = creditos?.usados ?? 0
@@ -89,15 +88,6 @@ export function VendedorLeads() {
       vivoRef.current = false
     }
   }, [])
-
-  // Sembrar ex-clientes como leads (costo cero, sin IA), una vez por vendedor.
-  useEffect(() => {
-    if (!vendedor.id || sembrado.current === vendedor.id) return
-    sembrado.current = vendedor.id
-    sembrarLeadsBase(vendedor.id)
-      .then((n) => n > 0 && reload())
-      .catch(() => {})
-  }, [vendedor.id, reload])
 
   // Búsqueda con IA — SOLO al apretar el botón (consume un crédito).
   async function buscar() {
@@ -135,13 +125,13 @@ export function VendedorLeads() {
     try {
       const n = await sembrarLeadsBase(vendedor.id)
       if (n > 0) {
-        setAviso({ tipo: "ok", texto: `Se agregaron ${n} lead${n === 1 ? "" : "s"} de tu base.` })
+        setAviso({ tipo: "ok", texto: `Se sumaron ${n} lead${n === 1 ? "" : "s"} de tu base para trabajar.` })
         reload()
       } else {
         setAviso({
           tipo: "info",
           texto:
-            "No hay ex-clientes ni prospectos en tu base asignados a este vendedor (o ya están todos cargados). Podés asignarlos en Base de clientes.",
+            "Ya trajiste todos los ex-clientes y prospectos de tu base. Cargá más en Base de clientes o usá “Buscar con IA” para leads nuevos.",
         })
       }
     } catch (e) {
@@ -232,8 +222,8 @@ export function VendedorLeads() {
         <div className="min-w-0 flex-1">
           <h2 className="text-[16px] font-semibold text-white">Asistente de leads</h2>
           <p className="mt-0.5 max-w-[64ch] text-[12.5px] text-[#c6d0e0]">
-            Tus ex-clientes ya aparecen para reconquistar (sin costo). Con “Buscar con IA” sumo e-commerces
-            reales nuevos desde la web, sin repetir los que ya tenés.
+            “Traer de mi base” te suma ~20 leads del día (ex-clientes y prospectos, sin costo). Cuando los
+            clasificás, apretá de nuevo para los próximos. “Buscar con IA” encuentra e-commerces nuevos en la web.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
