@@ -55,10 +55,16 @@ async function detalleError(error: any): Promise<string> {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+// Nombre (slug) de la Edge Function tal como quedó deployada en Supabase.
+// Ojo: al crearla desde el editor, Supabase asigna un slug random (ej.
+// "swift-function") aunque el título diga otra cosa. Este valor debe coincidir
+// con el que aparece en la URL .../functions/v1/<slug>.
+const LEADS_FN = "swift-function"
+
 // Llama a la Edge Function; ante cualquier fallo cae al mock (con aviso + detalle).
 export async function generarLeads(vendedorId: string): Promise<ResultadoLeads> {
   try {
-    const { data, error } = await supabase.functions.invoke("leads-ia", {
+    const { data, error } = await supabase.functions.invoke(LEADS_FN, {
       body: { vendedorId },
     })
     if (error) return { ...leadsMockData(), usandoMock: true, error: await detalleError(error) }
