@@ -38,6 +38,7 @@ export function VendedorLeads() {
   const [cargando, setCargando] = useState(true)
   const [mock, setMock] = useState(false)
   const [errorIa, setErrorIa] = useState<string | null>(null)
+  const [status, setStatus] = useState("Analizando…")
   const [creadas, setCreadas] = useState<Record<string, "creando" | "ok" | "error">>({})
 
   const sinVendedor = !vendedor.id
@@ -48,8 +49,9 @@ export function VendedorLeads() {
   const generar = useCallback(async () => {
     if (!vendedor.id) return
     setCargando(true)
+    setStatus("Analizando…")
     try {
-      const r = await generarLeads(vendedor.id)
+      const r = await generarLeads(vendedor.id, setStatus)
       setSugeridos(r.sugeridos)
       setIdeas(r.ideas)
       setMock(r.usandoMock)
@@ -68,7 +70,8 @@ export function VendedorLeads() {
     autoCargado.current = vendedor.id
     let vivo = true
     setCargando(true)
-    generarLeads(vendedor.id).then((r) => {
+    setStatus("Analizando…")
+    generarLeads(vendedor.id, (m) => vivo && setStatus(m)).then((r) => {
       if (!vivo) return
       setSugeridos(r.sugeridos)
       setIdeas(r.ideas)
@@ -126,6 +129,14 @@ export function VendedorLeads() {
           <RefreshCw className={cargando ? "animate-spin" : undefined} /> {cargando ? "Analizando…" : "Regenerar"}
         </Button>
       </div>
+
+      {cargando && !sinVendedor && (
+        <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] text-blue">
+          <RefreshCw size={15} className="shrink-0 animate-spin" />
+          <span className="font-medium">{status}</span>
+          <span className="text-[11.5px] text-slate">— busca en la web en tiempo real, puede tardar hasta ~1 min.</span>
+        </div>
+      )}
 
       {sinVendedor && (
         <Card className="mt-4 p-6 text-center">

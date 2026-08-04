@@ -72,6 +72,56 @@ function extraerJson(texto: string): any | null {
   return null
 }
 
+const iniciales = (n: string) =>
+  n
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("") || "?"
+
+const slug = (n: string) =>
+  "lead-" +
+  n
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+
+const limpio = (v: unknown): string | null => {
+  const s = typeof v === "string" ? v.trim() : ""
+  if (!s || s.toLowerCase() === "null" || s === "-") return null
+  return s
+}
+
+function normalizarSugeridos(arr: any[]): any[] {
+  return (arr ?? []).map((s: any) => ({
+    id: slug(String(s.nombre ?? "lead")),
+    nombre: s.nombre,
+    iniciales: iniciales(String(s.nombre ?? "?")),
+    bucket: s.bucket,
+    fit: typeof s.fit === "number" ? s.fit : Number(s.fit) || 0,
+    reconquista: !!s.reconquista,
+    motivo: s.motivo,
+    web: limpio(s.web),
+    telefono: limpio(s.telefono),
+    email: limpio(s.email),
+    fuentes: Array.isArray(s.fuentes)
+      ? s.fuentes.map((f: any) => ({ tipo: f.tipo ?? "web", detalle: f.detalle ?? "", url: limpio(f.url) }))
+      : [],
+  }))
+}
+
+function normalizarIdeas(arr: any[]): any[] {
+  return (arr ?? []).map((i: any) => ({
+    oportunidad: i.oportunidad,
+    bucket: i.bucket,
+    contexto: i.contexto,
+    angulos: Array.isArray(i.angulos) ? i.angulos : [],
+  }))
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
@@ -251,11 +301,12 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
       },
       body: JSON.stringify({
         model: "claude-opus-5",
-        max_tokens: 12000,
-        output_config: { effort: "medium" },
+        max_tokens: 10000,
+        stream: true,
+        output_config: { effort: "low" },
         tools: [
-          { type: "web_search_20260209", name: "web_search", max_uses: 4, user_location: { type: "approximate", country: "CL" } },
-          { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
+          { type: "web_search_20260209", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "CL" } },
+          { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 },
         ],
         system,
         messages: [{ role: "user", content: userMsg }],
@@ -265,64 +316,70 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
     return json(502, { error: `No se pudo contactar la IA: ${e instanceof Error ? e.message : e}` })
   }
 
-  if (!aiRes.ok) {
-    const detalle = await aiRes.text()
+  if (!aiRes.ok || !aiRes.body) {
+    const detalle = await aiRes.text().catch(() => "")
     return json(502, { error: `Error de la IA (${aiRes.status})`, detalle: detalle.slice(0, 500) })
   }
 
-  const data = await aiRes.json()
-  // La respuesta puede traer bloques de búsqueda + varios bloques de texto; el
-  // JSON final está en el texto.
-  const texto = (data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n")
-  const parsed = extraerJson(texto)
-  if (!parsed || !Array.isArray(parsed.sugeridos)) {
-    return json(502, { error: "La IA no devolvió un JSON válido.", detalle: texto.slice(0, 300) })
-  }
+  // Reenvío en streaming (NDJSON): mandamos avisos de progreso a medida que la
+  // IA busca en la web, y al final el resultado ya parseado. Así la app muestra
+  // el avance en vivo y no parece colgada.
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enc = new TextEncoder()
+      const send = (obj: unknown) => controller.enqueue(enc.encode(JSON.stringify(obj) + "\n"))
+      let finalText = ""
+      try {
+        send({ t: "status", m: "Analizando tu base y tu objetivo…" })
+        const reader = aiRes.body!.getReader()
+        const dec = new TextDecoder()
+        let buf = ""
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += dec.decode(value, { stream: true })
+          const lines = buf.split("\n")
+          buf = lines.pop() ?? ""
+          for (const line of lines) {
+            const s = line.trim()
+            if (!s.startsWith("data:")) continue
+            const payload = s.slice(5).trim()
+            if (!payload || payload === "[DONE]") continue
+            let ev: any
+            try {
+              ev = JSON.parse(payload)
+            } catch {
+              continue
+            }
+            if (ev.type === "content_block_start") {
+              const b = ev.content_block
+              if (b?.type === "server_tool_use" && b?.name === "web_search")
+                send({ t: "status", m: "Buscando e-commerces en la web…" })
+              else if (b?.type === "server_tool_use" && b?.name === "web_fetch")
+                send({ t: "status", m: "Leyendo un sitio para sacar datos reales…" })
+              else if (b?.type === "web_search_tool_result")
+                send({ t: "status", m: "Revisando resultados de búsqueda…" })
+              else if (b?.type === "text") send({ t: "status", m: "Armando y priorizando las sugerencias…" })
+            } else if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta") {
+              finalText += ev.delta.text
+            } else if (ev.type === "error") {
+              send({ t: "error", m: ev.error?.message ?? "Error de la IA" })
+            }
+          }
+        }
+        const parsed = extraerJson(finalText)
+        if (!parsed || !Array.isArray(parsed.sugeridos)) {
+          send({ t: "error", m: "La IA no devolvió un JSON válido." })
+        } else {
+          send({ t: "done", sugeridos: normalizarSugeridos(parsed.sugeridos), ideas: normalizarIdeas(parsed.ideas) })
+        }
+      } catch (e) {
+        send({ t: "error", m: e instanceof Error ? e.message : "Error de streaming" })
+      } finally {
+        controller.close()
+      }
+    },
+  })
 
-  // Enriquecer con iniciales + id estables para la UI.
-  const iniciales = (n: string) =>
-    n
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() ?? "")
-      .join("") || "?"
-  const slug = (n: string) =>
-    "lead-" +
-    n
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-
-  const limpio = (v: unknown): string | null => {
-    const s = typeof v === "string" ? v.trim() : ""
-    if (!s || s.toLowerCase() === "null" || s === "-") return null
-    return s
-  }
-
-  const sugeridos = (parsed.sugeridos ?? []).map((s: any) => ({
-    id: slug(String(s.nombre ?? "lead")),
-    nombre: s.nombre,
-    iniciales: iniciales(String(s.nombre ?? "?")),
-    bucket: s.bucket,
-    fit: typeof s.fit === "number" ? s.fit : Number(s.fit) || 0,
-    reconquista: !!s.reconquista,
-    motivo: s.motivo,
-    web: limpio(s.web),
-    telefono: limpio(s.telefono),
-    email: limpio(s.email),
-    fuentes: Array.isArray(s.fuentes)
-      ? s.fuentes.map((f: any) => ({ tipo: f.tipo ?? "web", detalle: f.detalle ?? "", url: limpio(f.url) }))
-      : [],
-  }))
-  const ideas = (parsed.ideas ?? []).map((i: any) => ({
-    oportunidad: i.oportunidad,
-    bucket: i.bucket,
-    contexto: i.contexto,
-    angulos: Array.isArray(i.angulos) ? i.angulos : [],
-  }))
-
-  return json(200, { sugeridos, ideas })
+  return new Response(stream, { headers: { ...cors, "Content-Type": "application/x-ndjson" } })
 })
