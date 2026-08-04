@@ -13,6 +13,7 @@ import type { Bucket } from "@/lib/types"
 export interface FuenteLead {
   tipo: "maps" | "web" | "social" | "base" | "linkedin" | "tendencia"
   detalle: string
+  url?: string | null // enlace real a la fuente (cuando la IA lo trae de la web)
 }
 
 export interface LeadSugerido {
@@ -23,6 +24,9 @@ export interface LeadSugerido {
   fit: number // 0-100, encaje con el objetivo del vendedor
   reconquista: boolean // true = ex-cliente a recuperar
   motivo: string // por qué la IA lo sugiere
+  web?: string | null // sitio real de la empresa
+  telefono?: string | null // teléfono real (solo si la IA lo encontró en la web)
+  email?: string | null // email real (solo si la IA lo encontró en la web)
   fuentes: FuenteLead[]
 }
 
@@ -94,10 +98,13 @@ function leadsMockData(): { sugeridos: LeadSugerido[]; ideas: IdeaConversacion[]
         reconquista: false,
         motivo:
           "Marca de indumentaria outdoor con fuerte venta online (~1.600 envíos/mes estimados). Hoy despachan con courier propio saturado — quejas de demora en reseñas recientes. Encaja con tu cupo estratégico faltante.",
+        web: "https://runaandina.cl",
+        telefono: "+56 2 2345 6789",
+        email: "contacto@runaandina.cl",
         fuentes: [
-          { tipo: "maps", detalle: "Google Maps · Vitacura" },
-          { tipo: "web", detalle: "runaandina.cl" },
-          { tipo: "social", detalle: "Instagram 48k" },
+          { tipo: "maps", detalle: "Google Maps · Vitacura", url: null },
+          { tipo: "web", detalle: "runaandina.cl", url: "https://runaandina.cl" },
+          { tipo: "social", detalle: "Instagram 48k", url: null },
         ],
       },
       {
@@ -109,9 +116,12 @@ function leadsMockData(): { sugeridos: LeadSugerido[]; ideas: IdeaConversacion[]
         reconquista: false,
         motivo:
           "Alimentos orgánicos con suscripción mensual. Publicaron que buscan tercerizar almacenamiento y armado de pedidos — candidato ideal para fulfillment. Volumen medio-alto y creciendo.",
+        web: "https://huertobravo.cl",
+        telefono: null,
+        email: "hola@huertobravo.cl",
         fuentes: [
-          { tipo: "maps", detalle: "Google Maps · Maipú" },
-          { tipo: "linkedin", detalle: 'Post LinkedIn "buscamos 3PL"' },
+          { tipo: "maps", detalle: "Google Maps · Maipú", url: null },
+          { tipo: "linkedin", detalle: 'Post LinkedIn "buscamos 3PL"', url: null },
         ],
       },
       {
@@ -123,9 +133,12 @@ function leadsMockData(): { sugeridos: LeadSugerido[]; ideas: IdeaConversacion[]
         reconquista: true,
         motivo:
           "Fue cliente hasta 2024 (~1.900 envíos/mes), se fue por tarifas. Reabrieron 2 sucursales y subió su volumen online. Buen momento para reconquistar — te sumaría estratégico.",
+        web: null,
+        telefono: null,
+        email: null,
         fuentes: [
-          { tipo: "base", detalle: "Tu base · ex-cliente" },
-          { tipo: "tendencia", detalle: "+40% tráfico web (6 meses)" },
+          { tipo: "base", detalle: "Tu base · ex-cliente", url: null },
+          { tipo: "tendencia", detalle: "+40% tráfico web (6 meses)", url: null },
         ],
       },
     ],

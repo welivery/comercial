@@ -51,70 +51,27 @@ const MOTIVO_LABEL: Record<string, string> = {
   otro: "otro motivo",
 }
 
-// Esquema de salida estructurada (structured outputs de la Messages API).
-const SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    sugeridos: {
-      type: "array",
-      description: "Nuevos e-commerces potenciales a prospectar (3 a 6).",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          nombre: { type: "string", description: "Nombre del e-commerce/empresa." },
-          bucket: { type: "string", enum: ["estrategico", "fulfillment", "mediano"] },
-          fit: { type: "integer", description: "Encaje 0-100 con el objetivo del vendedor (número entero entre 0 y 100)." },
-          reconquista: { type: "boolean", description: "true si es un ex-cliente a recuperar." },
-          motivo: { type: "string", description: "2-3 frases: por qué encaja y por qué ahora (rioplatense/chileno, concreto)." },
-          fuentes: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                tipo: { type: "string", enum: ["maps", "web", "social", "base", "linkedin", "tendencia"] },
-                detalle: { type: "string" },
-              },
-              required: ["tipo", "detalle"],
-            },
-          },
-        },
-        required: ["nombre", "bucket", "fit", "reconquista", "motivo", "fuentes"],
-      },
-    },
-    ideas: {
-      type: "array",
-      description: "Ideas de conversación para prospectos del pipeline con reunión próxima o seguimiento activo (0 a 4).",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          oportunidad: { type: "string", description: "Nombre del e-commerce (debe coincidir con uno del pipeline)." },
-          bucket: { type: "string", enum: ["estrategico", "fulfillment", "mediano"] },
-          contexto: { type: "string", description: "Por qué ahora (estado + timing)." },
-          angulos: {
-            type: "array",
-            items: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                titulo: { type: "string", description: "Ej: Dolor detectado, Encaje, Apertura sugerida, Timing." },
-                texto: { type: "string" },
-              },
-              required: ["titulo", "texto"],
-            },
-          },
-        },
-        required: ["oportunidad", "bucket", "contexto", "angulos"],
-      },
-    },
-  },
-  required: ["sugeridos", "ideas"],
+// Extrae el objeto JSON de la respuesta de la IA (viene en un bloque ```json```
+// al final del texto, o suelto). Devuelve null si no se puede parsear.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function extraerJson(texto: string): any | null {
+  const fences = [...texto.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)]
+  const candidatos: string[] = fences.map((m) => m[1])
+  // Fallback: del primer "{" al último "}".
+  const i = texto.indexOf("{")
+  const j = texto.lastIndexOf("}")
+  if (i >= 0 && j > i) candidatos.push(texto.slice(i, j + 1))
+  // Probar del último al primero (el JSON final suele ser el bueno).
+  for (const c of candidatos.reverse()) {
+    try {
+      return JSON.parse(c)
+    } catch {
+      /* seguir probando */
+    }
+  }
+  return null
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors })
 
@@ -207,17 +164,21 @@ Deno.serve(async (req) => {
   const reglasTxt =
     reglas.map((r) => `- ${r.tipo === "evitar" ? "EVITAR" : "PRIORIZAR"}: ${r.texto}`).join("\n") || "(sin reglas)"
 
-  const system = `Sos un asistente de prospección comercial para Welivery Chile, empresa de logística de última milla (envíos de e-commerce). Ayudás a un vendedor a encontrar nuevos e-commerces chilenos a los que ofrecerles el servicio de Welivery, y a preparar sus conversaciones.
+  const system = `Sos un asistente de prospección comercial para Welivery Chile, empresa de logística de última milla (envíos de e-commerce). Ayudás a un vendedor a encontrar NUEVOS e-commerces chilenos REALES a los que ofrecerles el servicio de Welivery, y a preparar sus conversaciones.
+
+REGLA DE ORO — DATOS REALES:
+- Las empresas que sugieras como NUEVAS (fuera de la base de datos del vendedor) tienen que ser REALES y verificables. Usá la búsqueda web (web_search) y la lectura de páginas (web_fetch) para encontrarlas: buscá tiendas online chilenas, directorios de e-commerce, Instagram de tiendas, Google, etc.
+- Para cada empresa nueva, entrá a su sitio/redes y sacá datos de contacto REALES: sitio web, teléfono, email, Instagram — SOLO los que figuren en una fuente real, con su URL. NUNCA inventes un teléfono, email o dato de contacto. Si no lo encontraste, dejá el campo en null.
+- Cada "fuente" debe llevar la URL real de donde sacaste el dato.
+- Si estimás volumen de envíos, dejalo claro como estimación en el "motivo" (no es un dato duro).
 
 Reglas de negocio:
 - El "bucket" clasifica al prospecto por prioridad: ${Object.values(BUCKET_LABEL).join("; ")}.
-- El vendedor tiene un objetivo mensual con una mezcla de buckets. Priorizá sugerir prospectos del bucket donde MÁS le falta para cumplir su mezcla.
-- Los ex-clientes con buen volumen que se fueron por precio o servicio son candidatos de "reconquista" (reconquista=true).
-- Español chileno, tono profesional y concreto. Nada de relleno ni promesas exageradas.
-- Sé realista: basá las sugerencias en el tipo de e-commerce chileno que encaja con este perfil de cliente. No inventes datos duros (facturación exacta, teléfonos); si estimás volumen, aclaralo como estimación.
-- Devolvé SOLO datos que respeten el esquema pedido.`
+- Priorizá el bucket donde MÁS le falta al vendedor para cumplir su mezcla objetivo.
+- Los ex-clientes de la base que se fueron por precio o servicio son candidatos de "reconquista" (reconquista=true); para esos, verificá igual con web su situación actual.
+- Español chileno, tono profesional y concreto. Nada de relleno ni promesas exageradas.`
 
-  const fuentesTxt = fuentes.length ? fuentes.join(", ") : "Google Maps, sitios web, redes sociales, tu base de clientes"
+  const fuentesTxt = fuentes.length ? fuentes.join(", ") : "Google, Google Maps, sitios web, Instagram, directorios de e-commerce chileno"
 
   const userMsg = `# Vendedor
 ${vend.nombre}${vend.zona ? ` · zona ${vend.zona}` : ""}
@@ -236,25 +197,48 @@ ${ctxGeneral || "(sin contexto general cargado)"}
 # Reglas de la IA
 ${reglasTxt}
 
-# Fuentes disponibles para prospectar
+# Dónde buscar (sugeridas por el admin)
 ${fuentesTxt}
 
-# Base de clientes del vendedor
-## Activos (${activos.length}) — no sugerir, sirven de referencia del perfil que funciona
+# Base de clientes del vendedor (NO sugerir los activos; sirven de referencia del perfil)
+## Activos (${activos.length})
 ${listar(activos, 25)}
 
 ## Ex-clientes (${exClientes.length}) — candidatos de reconquista
 ${listar(exClientes, 25, true)}
 
-## En prospección (${prospeccion.length}) — ya identificados, podés priorizarlos o complementarlos
+## En prospección (${prospeccion.length}) — ya identificados, podés priorizarlos/complementarlos
 ${listar(prospeccion, 25)}
 
 # Pipeline actual del vendedor (oportunidades abiertas)
 ${pipelineTxt}
 
 # Tarea
-1) "sugeridos": 3 a 6 e-commerces chilenos potenciales para prospectar, priorizando el bucket faltante. Podés incluir ex-clientes a reconquistar (reconquista=true) y/o prospectos de la lista. Para cada uno: por qué encaja, por qué ahora, y fuentes plausibles (tipo + detalle).
-2) "ideas": para hasta 4 oportunidades del PIPELINE ACTUAL con reunión coordinada próxima o en seguimiento, 2-3 ángulos de conversación accionables (dolor detectado, encaje, apertura/mensaje sugerido). Si el pipeline está vacío, devolvé ideas=[].`
+1) Buscá en la web 3 a 6 e-commerces chilenos REALES para prospectar, priorizando el bucket faltante. Para cada uno confirmá que existe y sacá datos de contacto reales de sus fuentes. Podés incluir ex-clientes de la base a reconquistar (reconquista=true).
+2) Ideas de conversación para hasta 4 oportunidades del PIPELINE ACTUAL con reunión próxima o en seguimiento (2-3 ángulos accionables cada una). Si el pipeline está vacío, ideas=[].
+
+# Formato de salida
+Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json que contenga exactamente este objeto (sin texto después):
+\`\`\`json
+{
+  "sugeridos": [
+    {
+      "nombre": "Nombre real de la tienda",
+      "bucket": "estrategico|fulfillment|mediano",
+      "fit": 0-100,
+      "reconquista": false,
+      "motivo": "2-3 frases: por qué encaja y por qué ahora (incluí estimación de volumen si aplica).",
+      "web": "https://... o null",
+      "telefono": "+56... o null (solo si es real)",
+      "email": "contacto@... o null (solo si es real)",
+      "fuentes": [ { "tipo": "web|maps|social|linkedin|base|tendencia", "detalle": "qué es", "url": "https://... o null" } ]
+    }
+  ],
+  "ideas": [
+    { "oportunidad": "Nombre del pipeline", "bucket": "estrategico|fulfillment|mediano", "contexto": "por qué ahora", "angulos": [ { "titulo": "Dolor detectado", "texto": "..." } ] }
+  ]
+}
+\`\`\``
 
   let aiRes: Response
   try {
@@ -267,9 +251,12 @@ ${pipelineTxt}
       },
       body: JSON.stringify({
         model: "claude-opus-5",
-        max_tokens: 8000,
-        thinking: { type: "disabled" },
-        output_config: { format: { type: "json_schema", schema: SCHEMA } },
+        max_tokens: 12000,
+        output_config: { effort: "medium" },
+        tools: [
+          { type: "web_search_20260209", name: "web_search", max_uses: 4, user_location: { type: "approximate", country: "CL" } },
+          { type: "web_fetch_20260209", name: "web_fetch", max_uses: 4 },
+        ],
         system,
         messages: [{ role: "user", content: userMsg }],
       }),
@@ -284,13 +271,12 @@ ${pipelineTxt}
   }
 
   const data = await aiRes.json()
-  // Con structured outputs, la respuesta viene como un bloque de texto con el JSON.
-  const texto = (data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("")
-  let parsed: { sugeridos?: any[]; ideas?: any[] }
-  try {
-    parsed = JSON.parse(texto)
-  } catch {
-    return json(502, { error: "La IA no devolvió un JSON válido." })
+  // La respuesta puede traer bloques de búsqueda + varios bloques de texto; el
+  // JSON final está en el texto.
+  const texto = (data.content ?? []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n")
+  const parsed = extraerJson(texto)
+  if (!parsed || !Array.isArray(parsed.sugeridos)) {
+    return json(502, { error: "La IA no devolvió un JSON válido.", detalle: texto.slice(0, 300) })
   }
 
   // Enriquecer con iniciales + id estables para la UI.
@@ -310,21 +296,32 @@ ${pipelineTxt}
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
 
-  const sugeridos = (parsed.sugeridos ?? []).map((s) => ({
-    id: slug(s.nombre),
+  const limpio = (v: unknown): string | null => {
+    const s = typeof v === "string" ? v.trim() : ""
+    if (!s || s.toLowerCase() === "null" || s === "-") return null
+    return s
+  }
+
+  const sugeridos = (parsed.sugeridos ?? []).map((s: any) => ({
+    id: slug(String(s.nombre ?? "lead")),
     nombre: s.nombre,
-    iniciales: iniciales(s.nombre),
+    iniciales: iniciales(String(s.nombre ?? "?")),
     bucket: s.bucket,
-    fit: s.fit,
+    fit: typeof s.fit === "number" ? s.fit : Number(s.fit) || 0,
     reconquista: !!s.reconquista,
     motivo: s.motivo,
-    fuentes: s.fuentes ?? [],
+    web: limpio(s.web),
+    telefono: limpio(s.telefono),
+    email: limpio(s.email),
+    fuentes: Array.isArray(s.fuentes)
+      ? s.fuentes.map((f: any) => ({ tipo: f.tipo ?? "web", detalle: f.detalle ?? "", url: limpio(f.url) }))
+      : [],
   }))
-  const ideas = (parsed.ideas ?? []).map((i) => ({
+  const ideas = (parsed.ideas ?? []).map((i: any) => ({
     oportunidad: i.oportunidad,
     bucket: i.bucket,
     contexto: i.contexto,
-    angulos: i.angulos ?? [],
+    angulos: Array.isArray(i.angulos) ? i.angulos : [],
   }))
 
   return json(200, { sugeridos, ideas })

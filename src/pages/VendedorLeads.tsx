@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   Building2,
   Check,
   Globe,
   Lightbulb,
+  Mail,
   MapPin,
+  Phone,
   Plus,
   RefreshCw,
   Sparkles,
@@ -39,6 +41,9 @@ export function VendedorLeads() {
   const [creadas, setCreadas] = useState<Record<string, "creando" | "ok" | "error">>({})
 
   const sinVendedor = !vendedor.id
+  // Evita re-disparar la búsqueda (cara) por re-renders o refresh de sesión:
+  // la carga automática ocurre una sola vez por vendedor. "Regenerar" es aparte.
+  const autoCargado = useRef<string | null>(null)
 
   const generar = useCallback(async () => {
     if (!vendedor.id) return
@@ -59,6 +64,8 @@ export function VendedorLeads() {
       setCargando(false)
       return
     }
+    if (autoCargado.current === vendedor.id) return // ya cargado para este vendedor
+    autoCargado.current = vendedor.id
     let vivo = true
     setCargando(true)
     generarLeads(vendedor.id).then((r) => {
@@ -80,7 +87,7 @@ export function VendedorLeads() {
       await crearOportunidad({
         vendedor_id: vendedor.id,
         ecommerce: l.nombre,
-        sitio: null,
+        sitio: l.web ?? null,
         envios_aprox: 0,
         lugar_retiro: "",
         tipo_producto: "",
@@ -201,13 +208,59 @@ export function VendedorLeads() {
                     )}
                   </h4>
                   <p className="mt-1.5 text-[12.5px] leading-relaxed text-slate">{l.motivo}</p>
+
+                  {/* Contacto real (cuando la IA lo encontró en la web) */}
+                  {(l.web || l.telefono || l.email) && (
+                    <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px]">
+                      {l.web && (
+                        <a
+                          href={l.web}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 font-medium text-blue hover:underline"
+                        >
+                          <Globe size={13} /> {l.web.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                        </a>
+                      )}
+                      {l.telefono && (
+                        <a
+                          href={`tel:${l.telefono.replace(/\s/g, "")}`}
+                          className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline"
+                        >
+                          <Phone size={13} /> {l.telefono}
+                        </a>
+                      )}
+                      {l.email && (
+                        <a
+                          href={`mailto:${l.email}`}
+                          className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline"
+                        >
+                          <Mail size={13} /> {l.email}
+                        </a>
+                      )}
+                    </div>
+                  )}
+
                   <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1.5 text-[11.5px] text-muted">
-                    {l.fuentes.map((f, i) => (
-                      <span key={i} className="inline-flex items-center gap-1.5">
-                        {FUENTE_ICON[f.tipo]}
-                        {f.detalle}
-                      </span>
-                    ))}
+                    {l.fuentes.map((f, i) =>
+                      f.url ? (
+                        <a
+                          key={i}
+                          href={f.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 hover:text-blue hover:underline"
+                        >
+                          {FUENTE_ICON[f.tipo]}
+                          {f.detalle}
+                        </a>
+                      ) : (
+                        <span key={i} className="inline-flex items-center gap-1.5">
+                          {FUENTE_ICON[f.tipo]}
+                          {f.detalle}
+                        </span>
+                      )
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col justify-center gap-2">
