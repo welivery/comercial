@@ -38,7 +38,10 @@ export function VendedorLeads() {
   const [errorIa, setErrorIa] = useState<string | null>(null)
   const [creadas, setCreadas] = useState<Record<string, "creando" | "ok" | "error">>({})
 
+  const sinVendedor = !vendedor.id
+
   const generar = useCallback(async () => {
+    if (!vendedor.id) return
     setCargando(true)
     try {
       const r = await generarLeads(vendedor.id)
@@ -52,6 +55,10 @@ export function VendedorLeads() {
   }, [vendedor.id])
 
   useEffect(() => {
+    if (!vendedor.id) {
+      setCargando(false)
+      return
+    }
     let vivo = true
     setCargando(true)
     generarLeads(vendedor.id).then((r) => {
@@ -106,12 +113,26 @@ export function VendedorLeads() {
         </div>
         <Button
           onClick={generar}
-          disabled={cargando}
+          disabled={cargando || sinVendedor}
           className="ml-auto shrink-0 bg-mint text-navy hover:bg-mint/90"
         >
           <RefreshCw className={cargando ? "animate-spin" : undefined} /> {cargando ? "Analizando…" : "Regenerar"}
         </Button>
       </div>
+
+      {sinVendedor && (
+        <Card className="mt-4 p-6 text-center">
+          <p className="text-[14px] font-semibold text-navy">Elegí o cargá un vendedor</p>
+          <p className="mx-auto mt-1.5 max-w-[52ch] text-[13px] text-slate">
+            El asistente genera leads para un vendedor puntual (cruza su objetivo del mes y su base). Todavía no
+            hay ninguno en el equipo. Agregá uno en{" "}
+            <Link to="/vendedores" className="font-medium text-blue underline">
+              Vendedores
+            </Link>{" "}
+            y volvé.
+          </p>
+        </Card>
+      )}
 
       {mock && !cargando && (
         <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-[#FCF3E2] p-3 text-[12px] text-[#8a6416]">
@@ -131,6 +152,8 @@ export function VendedorLeads() {
         </div>
       )}
 
+      {!sinVendedor && (
+        <>
       <SectionTitle titulo="Nuevos potenciales sugeridos" hint="Priorizados por tu mezcla faltante" />
       {cargando ? (
         <div className="grid gap-3">
@@ -251,6 +274,8 @@ export function VendedorLeads() {
           aceptado nace como oportunidad con su bucket ya asignado.
         </p>
       </div>
+        </>
+      )}
     </>
   )
 }
