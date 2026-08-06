@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react"
+import { useMemo, useEffect, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import {
   Ban,
   Building2,
   Check,
-  ChevronDown,
   Globe,
   Mail,
   MapPin,
@@ -20,14 +19,15 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
-import { BucketChip, Cargando, SectionTitle } from "@/components/widgets"
+import { BucketChip, Cargando } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useCreditosLeads, useLeads } from "@/hooks/useData"
 import { convertirLead, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
 import { generarLeadsIA } from "@/data/leads"
 import { asignarBucket } from "@/lib/buckets"
 import { MOTIVOS_RECHAZO, MOTIVO_RECHAZO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
-import type { FuenteLead, Lead, MotivoRechazo } from "@/lib/types"
+import { cn } from "@/lib/utils"
+import type { FuenteLead, Lead, LeadEstado, MotivoRechazo } from "@/lib/types"
 
 const FUENTE_ICON: Record<FuenteLead["tipo"], React.ReactNode> = {
   maps: <MapPin size={13} />,
@@ -36,6 +36,26 @@ const FUENTE_ICON: Record<FuenteLead["tipo"], React.ReactNode> = {
   linkedin: <Building2 size={13} />,
   base: <Check size={13} />,
   tendencia: <TrendingUp size={13} />,
+}
+
+const ESTADOS_FILTRO: { k: LeadEstado | "todos"; label: string }[] = [
+  { k: "nuevo", label: "Sin clasificar" },
+  { k: "convertido", label: "A oportunidad" },
+  { k: "rechazado", label: "Rechazados" },
+  { k: "todos", label: "Todos" },
+]
+const PERIODOS: { k: string; label: string }[] = [
+  { k: "todo", label: "Todo el tiempo" },
+  { k: "7d", label: "Últimos 7 días" },
+  { k: "30d", label: "Últimos 30 días" },
+  { k: "mes", label: "Este mes" },
+]
+function cutoff(k: string): number {
+  const now = new Date()
+  if (k === "7d") return now.getTime() - 7 * 864e5
+  if (k === "30d") return now.getTime() - 30 * 864e5
+  if (k === "mes") return new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+  return 0
 }
 
 interface OpForm {
@@ -53,22 +73,19 @@ export function VendedorLeads() {
   const { vendedor } = useVentas()
   const { data: leadsData, loading, error, reload } = useLeads(vendedor.id)
   const { data: creditos, reload: reloadCred } = useCreditosLeads(vendedor.id, PERIODO_ACTUAL)
-  const leads = leadsData ?? []
-  const nuevos = leads.filter((l) => l.estado === "nuevo")
-  const convertidos = leads.filter((l) => l.estado === "convertido")
-  const rechazados = leads.filter((l) => l.estado === "rechazado")
+  const leads = useMemo(() => leadsData ?? [], [leadsData])
 
   const [buscando, setBuscando] = useState(false)
   const [trayendo, setTrayendo] = useState(false)
   const [status, setStatus] = useState("Analizando…")
   const [aviso, setAviso] = useState<{ tipo: "ok" | "error" | "info"; texto: string } | null>(null)
-  const [verClasificados, setVerClasificados] = useState(false)
 
-  // Rechazo inline
+  const [estadoFiltro, setEstadoFiltro] = useState<LeadEstado | "todos">("nuevo")
+  const [periodo, setPeriodo] = useState("todo")
+
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
 
-  // Modal "pasar a oportunidad"
   const [convLead, setConvLead] = useState<Lead | null>(null)
   const [form, setForm] = useState<OpForm | null>(null)
   const [guardando, setGuardando] = useState(false)
@@ -82,6 +99,22 @@ export function VendedorLeads() {
   const restantes = Math.max(0, limite - usados)
   const sinCreditos = limite > 0 && restantes <= 0
 
+  // KPIs + lista filtrados por período y estado.
+  const { kpi, visibles } = useMemo(() => {
+    const desde = cutoff(periodo)
+    const enRango = leads.filter((l) => !desde || new Date(l.created_at).getTime() >= desde)
+    const nuevos = enRango.filter((l) => l.estado === "nuevo").length
+    const conv = enRango.filter((l) => l.estado === "convertido").length
+    const rech = enRango.filter((l) => l.estado === "rechazado").length
+    const lista = enRango
+      .filter((l) => estadoFiltro === "todos" || l.estado === estadoFiltro)
+      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+    return {
+      kpi: { traidos: enRango.length, nuevos, conv, rech, pct: enRango.length ? Math.round((conv / enRango.length) * 100) : 0 },
+      visibles: lista,
+    }
+  }, [leads, periodo, estadoFiltro])
+
   useEffect(() => {
     vivoRef.current = true
     return () => {
@@ -89,7 +122,6 @@ export function VendedorLeads() {
     }
   }, [])
 
-  // Búsqueda con IA — SOLO al apretar el botón (consume un crédito).
   async function buscar() {
     if (!vendedor.id || buscando) return
     setBuscando(true)
@@ -106,6 +138,7 @@ export function VendedorLeads() {
               ? `Se agregaron ${r.insertados} lead${r.insertados === 1 ? "" : "s"} nuevo${r.insertados === 1 ? "" : "s"}.`
               : "No se encontraron leads nuevos esta vez (sin repetir los que ya tenías).",
         })
+        setEstadoFiltro("nuevo")
         reload()
         reloadCred()
       } else {
@@ -117,7 +150,6 @@ export function VendedorLeads() {
     }
   }
 
-  // Traer leads de la base (ex-clientes + prospectos) — sin IA, sin costo.
   async function traerDeBase() {
     if (!vendedor.id || trayendo) return
     setTrayendo(true)
@@ -126,12 +158,13 @@ export function VendedorLeads() {
       const n = await sembrarLeadsBase(vendedor.id)
       if (n > 0) {
         setAviso({ tipo: "ok", texto: `Se sumaron ${n} lead${n === 1 ? "" : "s"} de tu base para trabajar.` })
+        setEstadoFiltro("nuevo")
         reload()
       } else {
         setAviso({
           tipo: "info",
           texto:
-            "Ya trajiste todos los ex-clientes y prospectos de tu base. Cargá más en Base de clientes o usá “Buscar con IA” para leads nuevos.",
+            "Ya trajiste todos los ex-clientes y prospectos de tu base. Cargá más en Base de clientes o usá “Buscar con IA”.",
         })
       }
     } catch (e) {
@@ -222,25 +255,17 @@ export function VendedorLeads() {
         <div className="min-w-0 flex-1">
           <h2 className="text-[16px] font-semibold text-white">Asistente de leads</h2>
           <p className="mt-0.5 max-w-[64ch] text-[12.5px] text-[#c6d0e0]">
-            “Traer de mi base” te suma ~20 leads del día (ex-clientes y prospectos, sin costo). Cuando los
-            clasificás, apretá de nuevo para los próximos. “Buscar con IA” encuentra e-commerces nuevos en la web.
+            “Traer de mi base” suma ~20 leads del día (gratis, sin repetir con otros vendedores). “Buscar con IA”
+            encuentra e-commerces nuevos en la web. Los leads quedan acá hasta que los clasifiques.
           </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              onClick={traerDeBase}
-              disabled={trayendo || sinVendedor}
-              className="border border-white/25 bg-white/10 text-white hover:bg-white/20"
-            >
+            <Button onClick={traerDeBase} disabled={trayendo || sinVendedor} className="border border-white/25 bg-white/10 text-white hover:bg-white/20">
               <Building2 className={trayendo ? "animate-pulse" : undefined} />
               {trayendo ? "Trayendo…" : "Traer de mi base"}
             </Button>
-            <Button
-              onClick={buscar}
-              disabled={buscando || sinVendedor || sinCreditos}
-              className="bg-mint text-navy hover:bg-mint/90"
-            >
+            <Button onClick={buscar} disabled={buscando || sinVendedor || sinCreditos} className="bg-mint text-navy hover:bg-mint/90">
               <RefreshCw className={buscando ? "animate-spin" : undefined} />
               {buscando ? "Buscando…" : "Buscar con IA"}
             </Button>
@@ -264,14 +289,12 @@ export function VendedorLeads() {
 
       {aviso && !buscando && (
         <div
-          className={
-            "mt-3 rounded-xl border px-3.5 py-2.5 text-[12.5px] " +
-            (aviso.tipo === "ok"
-              ? "border-success/30 bg-[#E4F5EC] text-success"
-              : aviso.tipo === "info"
-                ? "border-blue/25 bg-[#EEF3FE] text-blue"
-                : "border-error/30 bg-[#FBE2E2] text-error")
-          }
+          className={cn(
+            "mt-3 rounded-xl border px-3.5 py-2.5 text-[12.5px]",
+            aviso.tipo === "ok" && "border-success/30 bg-[#E4F5EC] text-success",
+            aviso.tipo === "info" && "border-blue/25 bg-[#EEF3FE] text-blue",
+            aviso.tipo === "error" && "border-error/30 bg-[#FBE2E2] text-error"
+          )}
         >
           {aviso.texto}
         </div>
@@ -279,8 +302,7 @@ export function VendedorLeads() {
 
       {sinCreditos && !buscando && (
         <div className="mt-3 rounded-xl border border-warning/40 bg-[#FCF3E2] px-3.5 py-2.5 text-[12.5px] text-[#8a6416]">
-          Usaste las {limite} búsquedas con IA de este mes. Podés seguir trabajando los leads que ya tenés; para
-          más, pedile al admin que suba el límite.
+          Usaste las {limite} búsquedas con IA de este mes. Podés seguir con tu base y clasificar lo que tenés.
         </div>
       )}
 
@@ -301,61 +323,104 @@ export function VendedorLeads() {
         <Card className="mt-4 p-6 text-center">
           <p className="text-[14px] font-semibold text-error">No se pudieron cargar los leads</p>
           <p className="mx-auto mt-1.5 max-w-[56ch] text-[13px] text-slate">
-            {error}. Si es la primera vez, falta correr la migración{" "}
-            <code className="rounded bg-mist px-1">supabase/leads.sql</code> en el SQL Editor de Supabase.
+            {error}. Si es la primera vez, falta correr <code className="rounded bg-mist px-1">supabase/leads.sql</code>{" "}
+            en Supabase.
           </p>
         </Card>
       ) : (
         <>
-          <SectionTitle
-            titulo="Leads para trabajar"
-            hint={`${nuevos.length} sin clasificar · pasalos a oportunidad o rechazalos`}
-          />
+          {/* KPIs */}
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Kpi label="Traídos" valor={kpi.traidos} color="#152A4F" />
+            <Kpi label="Sin clasificar" valor={kpi.nuevos} color="#2F5BE6" />
+            <Kpi label="A oportunidad" valor={kpi.conv} extra={`${kpi.pct}%`} color="#1E9E6A" />
+            <Kpi label="Rechazados" valor={kpi.rech} color="#7A869C" />
+          </div>
 
-          {nuevos.length === 0 ? (
-            <Card className="flex flex-col items-center p-8 text-center">
+          {/* Filtros */}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap gap-1 rounded-lg border border-border bg-mist/40 p-1">
+              {ESTADOS_FILTRO.map((e) => (
+                <button
+                  key={e.k}
+                  onClick={() => setEstadoFiltro(e.k)}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                    estadoFiltro === e.k ? "bg-white text-navy shadow-[var(--shadow-card)]" : "text-slate hover:text-ink"
+                  )}
+                >
+                  {e.label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={periodo}
+              onChange={(ev) => setPeriodo(ev.target.value)}
+              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+            >
+              {PERIODOS.map((p) => (
+                <option key={p.k} value={p.k}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Lista */}
+          {visibles.length === 0 ? (
+            <Card className="mt-3 flex flex-col items-center p-8 text-center">
               <span className="grid size-11 place-items-center rounded-xl bg-mist">
                 <Sparkles size={20} className="text-blue" />
               </span>
-              <p className="mt-3 text-[14px] font-semibold text-navy">No tenés leads sin clasificar</p>
-              <p className="mx-auto mt-1 max-w-[54ch] text-[13px] text-slate">
-                Usá <b>Traer de mi base</b> para sumar tus ex-clientes y prospectos (gratis), o{" "}
-                <b>Buscar con IA</b> para encontrar e-commerces nuevos en la web (usa un crédito).
+              <p className="mt-3 text-[14px] font-semibold text-navy">
+                {estadoFiltro === "nuevo" ? "No tenés leads sin clasificar" : "Nada en este filtro"}
               </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                <Button variant="outline" onClick={traerDeBase} disabled={trayendo}>
-                  <Building2 /> {trayendo ? "Trayendo…" : "Traer de mi base"}
-                </Button>
-                <Button variant="blue" onClick={buscar} disabled={buscando || sinCreditos}>
-                  <Sparkles /> Buscar con IA
-                </Button>
-              </div>
+              <p className="mx-auto mt-1 max-w-[52ch] text-[13px] text-slate">
+                {estadoFiltro === "nuevo"
+                  ? "Usá “Traer de mi base” (gratis) o “Buscar con IA” para sumar potenciales."
+                  : "Probá cambiar el estado o el período del filtro."}
+              </p>
             </Card>
           ) : (
-            <div className="grid gap-3">
-              {nuevos.map((l) => (
+            <div className="mt-3 grid gap-3">
+              {visibles.map((l) => (
                 <Card key={l.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:gap-3.5">
                   <span
-                    className={
-                      "grid size-[42px] shrink-0 place-items-center rounded-[10px] text-[15px] font-semibold " +
-                      (l.reconquista ? "bg-[#FBEFD4] text-[#a5741a]" : "bg-mist text-navy")
-                    }
+                    className={cn(
+                      "grid size-[42px] shrink-0 place-items-center rounded-[10px] text-[15px] font-semibold",
+                      l.estado === "rechazado"
+                        ? "bg-mist text-muted"
+                        : l.reconquista
+                          ? "bg-[#FBEFD4] text-[#a5741a]"
+                          : "bg-mist text-navy"
+                    )}
                   >
                     {l.iniciales}
                   </span>
                   <div className="min-w-0 flex-1">
                     <h4 className="flex flex-wrap items-center gap-2 text-[14px] font-semibold text-ink">
-                      {l.nombre}
+                      <span className={l.estado === "rechazado" ? "text-slate line-through" : undefined}>{l.nombre}</span>
                       <BucketChip bucket={l.bucket} />
-                      {l.reconquista ? (
-                        <span className="rounded-full bg-[#FBEFD4] px-2 py-0.5 text-[11px] font-semibold text-[#a5741a]">
-                          Ex-cliente · reconquista
-                        </span>
-                      ) : (
+                      {l.estado === "convertido" && (
                         <span className="rounded-full bg-[#DFF2E9] px-2 py-0.5 text-[11px] font-semibold text-success">
-                          {l.fit}% fit
+                          A oportunidad
                         </span>
                       )}
+                      {l.estado === "rechazado" && (
+                        <span className="rounded-full bg-mist px-2 py-0.5 text-[11px] font-semibold text-slate">
+                          Rechazado{l.motivo_rechazo ? ` · ${MOTIVO_RECHAZO_LABEL[l.motivo_rechazo]}` : ""}
+                        </span>
+                      )}
+                      {l.estado === "nuevo" &&
+                        (l.reconquista ? (
+                          <span className="rounded-full bg-[#FBEFD4] px-2 py-0.5 text-[11px] font-semibold text-[#a5741a]">
+                            Ex-cliente · reconquista
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-[#DFF2E9] px-2 py-0.5 text-[11px] font-semibold text-success">
+                            {l.fit}% fit
+                          </span>
+                        ))}
                     </h4>
                     <p className="mt-1.5 text-[12.5px] leading-relaxed text-slate">{l.motivo}</p>
 
@@ -398,9 +463,23 @@ export function VendedorLeads() {
                     )}
                   </div>
 
-                  {/* Acciones / clasificar */}
+                  {/* Acciones según estado */}
                   <div className="flex shrink-0 flex-col justify-center gap-2 sm:w-[190px]">
-                    {rechId === l.id ? (
+                    {l.estado === "convertido" ? (
+                      l.oportunidad_id ? (
+                        <Button asChild variant="outline" size="sm" className="text-success">
+                          <Link to={`/pipeline/${l.oportunidad_id}`}>
+                            <Check /> Ver en pipeline
+                          </Link>
+                        </Button>
+                      ) : (
+                        <span className="text-center text-[12px] text-success">En pipeline</span>
+                      )
+                    ) : l.estado === "rechazado" ? (
+                      <Button variant="outline" size="sm" onClick={() => deshacerRechazo(l)}>
+                        <Undo2 /> Reactivar
+                      </Button>
+                    ) : rechId === l.id ? (
                       <div className="rounded-lg border border-input p-2.5">
                         <label className="mb-1 block text-[11px] font-medium text-slate">Motivo del rechazo</label>
                         <select
@@ -443,49 +522,6 @@ export function VendedorLeads() {
                   </div>
                 </Card>
               ))}
-            </div>
-          )}
-
-          {/* Clasificados (convertidos + rechazados) */}
-          {(convertidos.length > 0 || rechazados.length > 0) && (
-            <div className="mt-5">
-              <button
-                onClick={() => setVerClasificados((v) => !v)}
-                className="flex w-full items-center gap-2 rounded-lg border border-border bg-mist/50 px-3.5 py-2.5 text-[12.5px] font-medium text-slate hover:bg-mist"
-              >
-                <ChevronDown size={15} className={verClasificados ? "rotate-180 transition-transform" : "transition-transform"} />
-                Clasificados: {convertidos.length} pasados a oportunidad · {rechazados.length} rechazados
-              </button>
-
-              {verClasificados && (
-                <div className="mt-2 grid gap-2">
-                  {convertidos.map((l) => (
-                    <div key={l.id} className="flex items-center gap-3 rounded-lg border border-border bg-white px-3.5 py-2.5">
-                      <Check size={15} className="shrink-0 text-success" />
-                      <span className="text-[13px] font-medium text-ink">{l.nombre}</span>
-                      <BucketChip bucket={l.bucket} short />
-                      <span className="text-[11.5px] text-success">Oportunidad creada</span>
-                      {l.oportunidad_id && (
-                        <Link to={`/pipeline/${l.oportunidad_id}`} className="ml-auto text-[12px] font-medium text-blue hover:underline">
-                          Ver en pipeline
-                        </Link>
-                      )}
-                    </div>
-                  ))}
-                  {rechazados.map((l) => (
-                    <div key={l.id} className="flex items-center gap-3 rounded-lg border border-border bg-white px-3.5 py-2.5">
-                      <Ban size={15} className="shrink-0 text-muted" />
-                      <span className="text-[13px] font-medium text-ink">{l.nombre}</span>
-                      <span className="rounded-full bg-mist px-2 py-0.5 text-[11px] text-slate">
-                        {l.motivo_rechazo ? MOTIVO_RECHAZO_LABEL[l.motivo_rechazo] : "Rechazado"}
-                      </span>
-                      <button onClick={() => deshacerRechazo(l)} className="ml-auto inline-flex items-center gap-1 text-[12px] font-medium text-slate hover:text-blue">
-                        <Undo2 size={13} /> Reactivar
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </>
@@ -557,5 +593,19 @@ export function VendedorLeads() {
 
       <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>
     </>
+  )
+}
+
+function Kpi({ label, valor, extra, color }: { label: string; valor: number; extra?: string; color: string }) {
+  return (
+    <Card className="p-3.5">
+      <div className="text-[11.5px] font-medium text-slate">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className="text-[24px] font-semibold tabular-nums" style={{ color }}>
+          {valor}
+        </span>
+        {extra && <span className="text-[12px] font-medium text-slate">{extra}</span>}
+      </div>
+    </Card>
   )
 }
