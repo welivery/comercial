@@ -31,7 +31,7 @@ export function AdminUsuarios() {
   const { usuario } = useVentas()
   const { data: usuarios, loading, error, reload } = useUsuarios()
   const [abierto, setAbierto] = useState(false)
-  const [editId, setEditId] = useState<string | null>(null)
+  const [editUser, setEditUser] = useState<VendedorRow | null>(null)
   const [form, setForm] = useState<FormState>(VACIO)
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
@@ -39,36 +39,45 @@ export function AdminUsuarios() {
   const lista = usuarios ?? []
 
   function abrirNuevo() {
-    setEditId(null)
+    setEditUser(null)
     setForm(VACIO)
     setErrForm(null)
     setAbierto(true)
   }
   function abrirEditar(u: VendedorRow) {
-    setEditId(u.id)
+    setEditUser(u)
     setForm({ nombre: u.nombre, email: u.email, zona: u.zona, rol: u.rol, password: "" })
     setErrForm(null)
     setAbierto(true)
   }
+
+  // Muestra el campo de contraseña: al crear, o al editar un usuario "Pendiente"
+  // (sin login) para darle acceso directo sin depender del mail de confirmación.
+  const puedeSetearPass = !editUser || !editUser.user_id
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault()
     setGuardando(true)
     setErrForm(null)
     try {
-      if (editId) {
-        await actualizarUsuario(editId, { nombre: form.nombre, zona: form.zona, rol: form.rol })
+      if (editUser && editUser.user_id) {
+        // Ya tiene login: solo actualiza la ficha.
+        await actualizarUsuario(editUser.id, { nombre: form.nombre, zona: form.zona, rol: form.rol })
       } else if (form.password.trim()) {
-        // Con contraseña → crea la cuenta de acceso (Edge Function).
+        // Con contraseña → crea/da el acceso (Edge Function, cuenta ya confirmada).
+        // Sirve tanto para usuarios nuevos como para "Pendientes" existentes.
         await crearUsuarioConAcceso({
-          email: form.email,
+          email: editUser ? editUser.email : form.email,
           nombre: form.nombre,
           zona: form.zona,
           rol: form.rol,
           password: form.password.trim(),
         })
+      } else if (editUser) {
+        // Pendiente sin contraseña: solo actualiza la ficha.
+        await actualizarUsuario(editUser.id, { nombre: form.nombre, zona: form.zona, rol: form.rol })
       } else {
-        // Sin contraseña → solo la ficha (la persona se registra después).
+        // Nuevo sin contraseña → solo la ficha (la persona se registra después).
         await crearUsuario({ email: form.email, nombre: form.nombre, zona: form.zona, rol: form.rol })
       }
       setAbierto(false)
@@ -203,14 +212,14 @@ export function AdminUsuarios() {
       <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
         <UserRound size={16} className="mt-0.5 shrink-0 text-blue" />
         <p className="leading-relaxed">
-          Al crear un usuario cargás su ficha con un email. Para que pueda entrar, la persona se{" "}
-          <b className="font-semibold text-ink">registra con ese mismo email</b> desde la pantalla de login
-          (queda enganchada automáticamente), o le seteás una contraseña desde Supabase → Authentication.
-          Eliminar el registro lo saca del equipo, pero no borra su cuenta de acceso (eso se hace en Supabase).
+          Para dar acceso sin depender de mails: <b className="font-semibold text-ink">editá al usuario “Pendiente”
+          y ponele una contraseña</b> → entra directo con su email y esa clave (después puede cambiarla). La otra
+          opción es que la persona se registre con ese email desde el login (queda enganchada sola). Eliminar el
+          registro lo saca del equipo.
         </p>
       </div>
 
-      <Modal open={abierto} onClose={() => setAbierto(false)} title={editId ? "Editar usuario" : "Nuevo usuario"}>
+      <Modal open={abierto} onClose={() => setAbierto(false)} title={editUser ? "Editar usuario" : "Nuevo usuario"}>
         <form onSubmit={guardar} className="flex flex-col gap-3.5">
           <Campo label="Nombre">
             <input
@@ -229,7 +238,7 @@ export function AdminUsuarios() {
               className="inp disabled:bg-mist disabled:text-slate"
               placeholder="persona@welivery.cl"
               required
-              disabled={!!editId}
+              disabled={!!editUser}
             />
           </Campo>
           <Campo label="Zona">
@@ -251,20 +260,21 @@ export function AdminUsuarios() {
             </select>
           </Campo>
 
-          {!editId && (
-            <Campo label="Contraseña (opcional)">
+          {puedeSetearPass && (
+            <Campo label={editUser ? "Contraseña para dar acceso" : "Contraseña (opcional)"}>
               <input
                 type="text"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className="inp"
-                placeholder="Dejá vacío para que se registre solo/a"
+                placeholder={editUser ? "Mínimo 6 caracteres" : "Dejá vacío para que se registre solo/a"}
                 minLength={6}
                 autoComplete="off"
               />
               <span className="text-[11px] text-muted">
-                Con contraseña le creás el acceso directo. Vacío = solo la ficha; la persona se registra
-                con su email desde el login.
+                {editUser
+                  ? "Le das acceso directo con esta contraseña (cuenta ya confirmada, sin mail). Pasásela por WhatsApp; puede cambiarla después."
+                  : "Con contraseña le creás el acceso directo. Vacío = solo la ficha; la persona se registra con su email desde el login."}
               </span>
             </Campo>
           )}
@@ -276,7 +286,7 @@ export function AdminUsuarios() {
               Cancelar
             </Button>
             <Button type="submit" variant="blue" disabled={guardando}>
-              {guardando ? "Guardando…" : editId ? "Guardar" : "Crear"}
+              {guardando ? "Guardando…" : editUser ? "Guardar" : "Crear"}
             </Button>
           </div>
         </form>
