@@ -166,7 +166,12 @@ async function fnMsg(error: any): Promise<string> {
   } catch {
     /* ignore */
   }
-  return error?.message ?? "Error en la función"
+  const msg = error?.message ?? "Error en la función"
+  // La función `usuarios` no está deployada / no se llega a ella.
+  if (/failed to (send|fetch)|not found|404/i.test(String(msg))) {
+    return "La función 'usuarios' no está deployada. Creá el usuario SIN contraseña (se registra desde el login), o deployá la función 'usuarios' en Supabase."
+  }
+  return msg
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -403,7 +408,7 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
   const [baseRes, leadsRes] = await Promise.all([
     supabase
       .from("clientes")
-      .select("nombre, segmento, bucket, envios_mes, motivo_baja, nota")
+      .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id")
       .in("segmento", ["ex_cliente", "prospeccion"])
       .or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
       .order("envios_mes", { ascending: false }),
@@ -413,21 +418,27 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
   const yaHay = new Set((leadsRes.data ?? []).map((l: { clave: string }) => l.clave))
 
   const vistos = new Set<string>()
+  const elegidos: { id: string; sinAsignar: boolean; fila: Record<string, unknown> }[] = []
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const filas = (baseRes.data ?? [])
-    .map((c: any) => {
-      const esEx = c.segmento === "ex_cliente"
-      const motivo = esEx
-        ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
-          (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
-          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
-        : `Prospecto de tu base.` +
-          (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
-          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
-      return {
+  for (const c of (baseRes.data ?? []) as any[]) {
+    const clave = claveLead(c.nombre)
+    if (yaHay.has(clave) || vistos.has(clave)) continue
+    vistos.add(clave)
+    const esEx = c.segmento === "ex_cliente"
+    const motivo = esEx
+      ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
+        (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
+        (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+      : `Prospecto de tu base.` +
+        (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
+        (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+    elegidos.push({
+      id: c.id,
+      sinAsignar: c.vendedor_id == null,
+      fila: {
         vendedor_id: vendedorId,
         nombre: c.nombre,
-        clave: claveLead(c.nombre),
+        clave,
         bucket: c.bucket,
         fit: esEx ? 70 : 60,
         reconquista: esEx,
@@ -435,21 +446,25 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
         fuentes: [{ tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null }],
         origen: "base",
         estado: "nuevo",
-      }
+      },
     })
-    .filter((f: any) => {
-      if (yaHay.has(f.clave) || vistos.has(f.clave)) return false
-      vistos.add(f.clave)
-      return true
-    })
-    .slice(0, lote) // solo el próximo lote
+    if (elegidos.length >= lote) break
+  }
   /* eslint-enable @typescript-eslint/no-explicit-any */
-  if (!filas.length) return 0
+  if (!elegidos.length) return 0
+
   const { error: insErr } = await supabase
     .from("leads")
-    .upsert(filas, { onConflict: "vendedor_id,clave", ignoreDuplicates: true })
+    .upsert(elegidos.map((e) => e.fila), { onConflict: "vendedor_id,clave", ignoreDuplicates: true })
   if (insErr) throw new Error(insErr.message)
-  return filas.length
+
+  // Reclamar los clientes SIN asignar que se trajeron, para que no aparezcan
+  // como lead de otro vendedor (best-effort; no bloquea si falla el RLS).
+  const idsSinAsignar = elegidos.filter((e) => e.sinAsignar).map((e) => e.id)
+  if (idsSinAsignar.length) {
+    await supabase.from("clientes").update({ vendedor_id: vendedorId }).in("id", idsSinAsignar).is("vendedor_id", null)
+  }
+  return elegidos.length
 }
 
 export async function rechazarLead(id: string, motivo: MotivoRechazo): Promise<void> {
