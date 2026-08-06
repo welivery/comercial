@@ -488,7 +488,8 @@ export async function reactivarLead(id: string): Promise<void> {
 // y marca el lead como convertido (linkeado). Devuelve el id de la oportunidad.
 export async function convertirLead(
   leadId: string,
-  i: OportunidadInput
+  i: OportunidadInput,
+  nota?: string
 ): Promise<string> {
   const bucket = asignarBucket({
     marca_reconocida: i.marca_reconocida,
@@ -507,6 +508,12 @@ export async function convertirLead(
     .update({ estado: "convertido", oportunidad_id: opId, updated_at: new Date().toISOString() })
     .eq("id", leadId)
   if (updErr) throw new Error(updErr.message)
+  // Nota opcional del vendedor → queda como primer evento del historial.
+  if (nota && nota.trim()) {
+    await supabase
+      .from("oportunidad_eventos")
+      .insert({ oportunidad_id: opId, titulo: "Nota al pasar a oportunidad", detalle: nota.trim() })
+  }
   return opId
 }
 

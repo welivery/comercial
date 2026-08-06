@@ -65,6 +65,7 @@ interface OpForm {
   lugar_retiro: string
   tipo_producto: string
   interes: string
+  nota: string
   marca_reconocida: boolean
   quiere_fulfillment: boolean
 }
@@ -203,6 +204,7 @@ export function VendedorLeads() {
       lugar_retiro: "",
       tipo_producto: "",
       interes: (l.motivo ?? "").slice(0, 140),
+      nota: "",
       marca_reconocida: l.bucket === "estrategico",
       quiere_fulfillment: l.bucket === "fulfillment",
     })
@@ -225,7 +227,7 @@ export function VendedorLeads() {
         marca_reconocida: form.marca_reconocida,
         quiere_fulfillment: form.quiere_fulfillment,
         origen: "ia",
-      })
+      }, form.nota)
       setConvLead(null)
       reload()
     } catch (err) {
@@ -562,6 +564,15 @@ export function VendedorLeads() {
             <label className="flex flex-col gap-1.5">
               <span className="text-[12px] font-medium text-slate">Interés (opcional)</span>
               <input value={form.interes} onChange={(e) => setForm({ ...form, interes: e.target.value })} className="inp" />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Nota (opcional)</span>
+              <textarea
+                value={form.nota}
+                onChange={(e) => setForm({ ...form, nota: e.target.value })}
+                className="inp min-h-[64px] resize-y"
+                placeholder="Info útil del contacto, próxima acción, etc. Queda en el historial de la oportunidad."
+              />
             </label>
             <div className="flex flex-wrap items-center gap-4 rounded-lg bg-mist/70 p-3">
               <label className="flex items-center gap-2 text-[12.5px] text-ink">
