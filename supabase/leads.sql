@@ -2,7 +2,7 @@
 -- Correr UNA vez en el SQL Editor de Supabase (después del schema base).
 -- Idempotente en lo posible (usa IF NOT EXISTS / DROP POLICY IF EXISTS).
 
--- ─────────────────────────────── Enums ───────────────────────────────
+-- ──────────────────────────── Enums ────────────────────────────
 do $$ begin
   create type lead_estado as enum ('nuevo', 'convertido', 'rechazado');
 exception when duplicate_object then null; end $$;
@@ -11,7 +11,7 @@ do $$ begin
   create type lead_origen as enum ('ia', 'base');
 exception when duplicate_object then null; end $$;
 
--- ─────────────────────── Créditos de IA (por mes) ───────────────────────
+-- ────────────────────── Créditos de IA (por mes) ──────────────────────
 -- Límite mensual de búsquedas con IA por vendedor (configurable por el admin).
 alter table config_ventas
   add column if not exists leads_limite_mensual int not null default 15;
@@ -24,7 +24,7 @@ create table if not exists leads_uso (
   primary key (vendedor_id, periodo)
 );
 
--- ─────────────────────────────── Leads ───────────────────────────────
+-- ──────────────────────────── Leads ────────────────────────────
 create table if not exists leads (
   id             uuid primary key default gen_random_uuid(),
   vendedor_id    uuid not null references vendedores(id) on delete cascade,
@@ -48,7 +48,7 @@ create table if not exists leads (
 );
 create index if not exists idx_leads_vend on leads(vendedor_id, estado);
 
--- ─────────────────────────────── RLS ───────────────────────────────
+-- ──────────────────────────── RLS ─────────────────────────────
 alter table leads     enable row level security;
 alter table leads_uso enable row level security;
 
@@ -74,3 +74,11 @@ create policy "leads: admin delete" on leads for delete using (is_admin_ventas()
 drop policy if exists "uso: propio select" on leads_uso;
 create policy "uso: propio select" on leads_uso for select
   using (vendedor_id = current_vendedor_id() or is_admin_ventas());
+
+-- Reclamo de clientes: cuando un vendedor trae de su base un cliente SIN asignar,
+-- se lo asigna a sí mismo para que no aparezca como lead de otro vendedor
+-- (evita que se crucen). Solo puede tomar los que están libres (vendedor_id null).
+drop policy if exists "cli: vendedor reclama" on clientes;
+create policy "cli: vendedor reclama" on clientes for update
+  using (vendedor_id is null)
+  with check (vendedor_id = current_vendedor_id());
