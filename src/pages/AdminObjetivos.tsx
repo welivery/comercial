@@ -12,7 +12,15 @@ import type { Bucket, Objetivo, Vendedor } from "@/lib/types"
 
 const MIX_DEFAULT: Record<Bucket, number> = { estrategico: 40, fulfillment: 30, mediano: 30 }
 
-function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo?: Objetivo }) {
+function ObjetivoEditor({
+  vendedor,
+  objetivo,
+  onGuardado,
+}: {
+  vendedor: Vendedor
+  objetivo?: Objetivo
+  onGuardado?: () => void
+}) {
   const [reuniones, setReuniones] = useState(objetivo?.reuniones_efectivas ?? 12)
   const [mix, setMix] = useState<Record<Bucket, number>>(objetivo?.mix ?? MIX_DEFAULT)
   const [guardando, setGuardando] = useState(false)
@@ -28,6 +36,7 @@ function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo?:
       await guardarObjetivo(vendedor.id, PERIODO_ACTUAL, reuniones, mix)
       setGuardado(true)
       setTimeout(() => setGuardado(false), 2500)
+      onGuardado?.()
     } catch (e) {
       setErr(e instanceof Error ? e.message : "No se pudo guardar")
     } finally {
@@ -106,11 +115,13 @@ function ObjetivoEditor({ vendedor, objetivo }: { vendedor: Vendedor; objetivo?:
 
 export function AdminObjetivos() {
   const { data: vendedores, loading, error } = useVendedores()
-  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
+  const { data: objetivos, loading: loadingObj, reload: reloadObj } = useObjetivos(PERIODO_ACTUAL)
   const vends = vendedores ?? []
   const objs = objetivos ?? []
 
-  if (loading) return <Cargando que="los objetivos" />
+  // Esperar TAMBIÉN a los objetivos: si no, los editores se montan con los
+  // valores por defecto antes de que lleguen los guardados y no se actualizan.
+  if (loading || loadingObj) return <Cargando que="los objetivos" />
   if (error) return <ErrorMsg msg={error} />
 
   return (
@@ -126,9 +137,14 @@ export function AdminObjetivos() {
         </Card>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {vends.map((v) => (
-            <ObjetivoEditor key={v.id} vendedor={v} objetivo={objs.find((o) => o.vendedor_id === v.id)} />
-          ))}
+          {vends.map((v) => {
+            const obj = objs.find((o) => o.vendedor_id === v.id)
+            // key incluye el id del objetivo: si aparece/cambia, el editor se
+            // vuelve a montar con los valores correctos.
+            return (
+              <ObjetivoEditor key={`${v.id}:${obj?.id ?? "n"}`} vendedor={v} objetivo={obj} onGuardado={reloadObj} />
+            )
+          })}
         </div>
       )}
     </>
