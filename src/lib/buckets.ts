@@ -15,7 +15,7 @@ export const SEGMENTOS_DEFAULT: Segmento[] = [
   { id: "chico", nombre: "Chico", tipo: "volumen", envios_min: 0, regla: null, color: "#A6AEBC", orden: 4, activo: true },
 ]
 
-// ── Registro reactivo ──────────────────────────────────────────────────
+// ── Registro reactivo ────────────────────────────────────────────────────────
 let _segmentos: Segmento[] = SEGMENTOS_DEFAULT
 const _listeners = new Set<() => void>()
 
@@ -41,7 +41,7 @@ export function segmentosActivos(segs: Segmento[] = _segmentos): Segmento[] {
   return segs.filter((s) => s.activo).sort((a, b) => a.orden - b.orden)
 }
 
-// ── Lookups por id (fallback a defaults / genérico) ─────────────────────────
+// ── Lookups por id (fallback a defaults / genérico) ──────────────────────────
 function buscar(id: Bucket, segs: Segmento[] = _segmentos): Segmento | undefined {
   return segs.find((s) => s.id === id) ?? SEGMENTOS_DEFAULT.find((s) => s.id === id)
 }
@@ -56,7 +56,7 @@ export function segShort(id: Bucket, segs?: Segmento[]): string {
   return n.length <= 4 ? n : n.slice(0, 4)
 }
 
-// ── Clasificación ──────────────────────────────────────────────────────
+// ── Clasificación ────────────────────────────────────────────────────────────
 // Bandas de volumen: el cliente cae en la de MAYOR umbral que su volumen alcanza
 // (marca reconocida = ∞ → banda tope). Especiales ('fulfillment'): por regla.
 // El `orden` decide la prioridad entre una especial y las bandas (p.ej. si un

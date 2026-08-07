@@ -109,7 +109,7 @@ export interface Cliente {
   nota: string
 }
 
-// ────────────────────────────── Leads ──────────────────────────────
+// ─────────────────────────────── Leads ───────────────────────────────
 // Un lead es un potencial cliente detectado (por IA en la web, o sembrado de
 // la base como ex-cliente a reconquistar). Persistente: el vendedor lo clasifica
 // pasándolo a oportunidad o rechazándolo con un motivo.
