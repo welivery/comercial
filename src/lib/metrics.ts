@@ -2,7 +2,7 @@
 // el objetivo cuenta las que llegaron a "reunión efectiva" en el período; los
 // cierres y el tiempo-a-cierre salen del mismo flujo.
 
-import { BUCKETS } from "@/lib/buckets"
+import { getSegmentosRegistry, segmentosActivos } from "@/lib/buckets"
 import {
   ESTADOS_PIPELINE,
   diasEntre,
@@ -14,6 +14,7 @@ import type {
   EstadoOportunidad,
   Objetivo,
   Oportunidad,
+  Segmento,
 } from "@/lib/types"
 
 export interface MixDetalle {
@@ -43,8 +44,10 @@ export function esActiva(o: Oportunidad): boolean {
 export function avanceVendedor(
   ops: Oportunidad[],
   objetivo: Objetivo | undefined,
-  periodo: string
+  periodo: string,
+  segmentos?: Segmento[]
 ): AvanceVendedor {
+  const segs = segmentosActivos(segmentos ?? getSegmentosRegistry())
   // Efectivas del período: llegaron al hito y su reunión efectiva cae en el mes.
   const efectivasOps = ops.filter(
     (o) => tuvoReunionEfectiva(o.estado) && enPeriodo(o.reunion_efectiva_at, periodo)
@@ -65,13 +68,13 @@ export function avanceVendedor(
 
   const objetivoReuniones = objetivo?.reuniones_efectivas ?? 0
 
-  const mix: MixDetalle[] = BUCKETS.map((bucket) => {
-    const cantidad = efectivasOps.filter((o) => o.bucket === bucket).length
+  const mix: MixDetalle[] = segs.map((s) => {
+    const cantidad = efectivasOps.filter((o) => o.bucket === s.id).length
     return {
-      bucket,
+      bucket: s.id,
       cantidad,
       pct: efectivas ? Math.round((cantidad / efectivas) * 100) : 0,
-      objetivoPct: objetivo?.mix[bucket] ?? 0,
+      objetivoPct: objetivo?.mix[s.id] ?? 0,
     }
   })
 
@@ -129,15 +132,16 @@ export interface AvanceEquipo {
 export function avanceEquipo(
   ops: Oportunidad[],
   objetivos: Objetivo[],
-  periodo: string
+  periodo: string,
+  segmentos?: Segmento[]
 ): AvanceEquipo {
-  const av = avanceVendedor(ops, undefined, periodo)
+  const av = avanceVendedor(ops, undefined, periodo, segmentos)
   const objetivoTotal = objetivos.reduce((a, o) => a + o.reuniones_efectivas, 0)
   // Mix objetivo del equipo = promedio ponderado por reuniones objetivo.
   const mix: MixDetalle[] = av.mix.map((m) => {
     const objetivoPct = objetivoTotal
       ? Math.round(
-          objetivos.reduce((a, o) => a + o.mix[m.bucket] * o.reuniones_efectivas, 0) /
+          objetivos.reduce((a, o) => a + (o.mix[m.bucket] ?? 0) * o.reuniones_efectivas, 0) /
             objetivoTotal
         )
       : 0

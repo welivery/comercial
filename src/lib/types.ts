@@ -4,11 +4,25 @@
 
 export type RolVentas = "admin" | "vendedor"
 
-// Bucket = tipo de cliente que buscamos, asignado por PRIORIDAD al cargar la
-// oportunidad: Estratégico (marca reconocida o +1.000 envíos) → Fulfillment
-// (quiere almacenamiento + armado) → Mediano (el resto). Los % del objetivo
-// suman 100%.
-export type Bucket = "estrategico" | "fulfillment" | "mediano"
+// Bucket = id del SEGMENTO de cliente al que cayó la oportunidad. Los segmentos
+// son configurables por el admin (tabla `segmentos`, ver lib/buckets.ts); por eso
+// el tipo es un string abierto y no un union fijo. Semilla: estrategico /
+// fulfillment / mediano / chico.
+export type Bucket = string
+
+// Un segmento clasifica clientes/oportunidades. 'volumen' = banda por envíos/mes
+// (envios_min); 'especial' = se asigna por una regla (hoy 'fulfillment').
+export type SegmentoTipo = "volumen" | "especial"
+export interface Segmento {
+  id: string
+  nombre: string
+  tipo: SegmentoTipo
+  envios_min: number | null // solo 'volumen'
+  regla: string | null // solo 'especial' (p.ej. 'fulfillment')
+  color: string
+  orden: number
+  activo: boolean
+}
 
 // Estados del pipeline (una oportunidad los recorre en orden; "perdido" es
 // salida lateral). "reunion_efectiva" es el hito que cuenta al objetivo.
@@ -95,7 +109,7 @@ export interface Cliente {
   nota: string
 }
 
-// ─────────────────────────────── Leads ───────────────────────────────
+// ────────────────────────────── Leads ──────────────────────────────
 // Un lead es un potencial cliente detectado (por IA en la web, o sembrado de
 // la base como ex-cliente a reconquistar). Persistente: el vendedor lo clasifica
 // pasándolo a oportunidad o rechazándolo con un motivo.
