@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { NavLink, Outlet, useNavigate } from "react-router-dom"
 import {
   Activity,
@@ -17,6 +18,8 @@ import { Simbolo } from "@/components/brand/Simbolo"
 import { useTheme } from "@/hooks/useTheme"
 import { cn } from "@/lib/utils"
 import { useVentas } from "@/store"
+import { setSegmentosRegistry } from "@/lib/buckets"
+import { fetchSegmentos } from "@/data/api"
 import type { RolVentas } from "@/lib/types"
 
 interface NavItem {
@@ -46,6 +49,14 @@ export function VentasLayout() {
     useVentas()
   const { tema, toggle } = useTheme()
   const navigate = useNavigate()
+
+  // Carga única de los segmentos configurables al registro reactivo (best-effort;
+  // si falla, se usan los defaults). Los chips/mezclas se re-renderizan al llegar.
+  useEffect(() => {
+    fetchSegmentos()
+      .then(setSegmentosRegistry)
+      .catch(() => {})
+  }, [])
 
   function cambiarModo(m: RolVentas) {
     setModo(m)

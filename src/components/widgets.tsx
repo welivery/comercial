@@ -1,7 +1,7 @@
 // Componentes visuales chicos del módulo Ventas. Reusan tokens de marca.
 
 import { cn } from "@/lib/utils"
-import { BUCKET_COLOR, BUCKET_LABEL, BUCKET_SHORT } from "@/lib/buckets"
+import { segColor, segLabel, segShort, useSegmentos } from "@/lib/buckets"
 import {
   ESTADO_COLOR,
   ESTADO_LABEL,
@@ -25,15 +25,16 @@ export function VAvatar({ iniciales, className }: { iniciales: string; className
   )
 }
 
-// Chip de bucket (Estratégico / Fulfillment / Mediano). `short` para tarjetas.
+// Chip del segmento del cliente. `short` para tarjetas compactas.
 export function BucketChip({ bucket, short }: { bucket: Bucket; short?: boolean }) {
-  const color = BUCKET_COLOR[bucket]
+  const segs = useSegmentos() // suscribe: re-renderiza al cargar los reales
+  const color = segColor(bucket, segs)
   return (
     <span
       className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium"
       style={{ background: color + "1F", color }}
     >
-      {short ? BUCKET_SHORT[bucket] : BUCKET_LABEL[bucket]}
+      {short ? segShort(bucket, segs) : segLabel(bucket, segs)}
     </span>
   )
 }
@@ -101,6 +102,7 @@ export function Progress({
 
 // Barra segmentada de mezcla de tipos.
 export function MixBar({ mix, className }: { mix: MixDetalle[]; className?: string }) {
+  const segs = useSegmentos()
   const total = mix.reduce((a, m) => a + m.cantidad, 0)
   return (
     <div className={cn("flex h-3 overflow-hidden rounded-full bg-cloud", className)}>
@@ -110,8 +112,8 @@ export function MixBar({ mix, className }: { mix: MixDetalle[]; className?: stri
             <span
               key={m.bucket}
               className="block h-full"
-              style={{ width: `${(m.cantidad / total) * 100}%`, background: BUCKET_COLOR[m.bucket] }}
-              title={`${BUCKET_LABEL[m.bucket]}: ${m.cantidad}`}
+              style={{ width: `${(m.cantidad / total) * 100}%`, background: segColor(m.bucket, segs) }}
+              title={`${segLabel(m.bucket, segs)}: ${m.cantidad}`}
             />
           ))}
     </div>
