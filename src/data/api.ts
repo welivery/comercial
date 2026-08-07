@@ -11,6 +11,7 @@ import type {
   CreditosLeads,
   EstadoOportunidad,
   Lead,
+  LeadEstado,
   MotivoBaja,
   MotivoRechazo,
   Objetivo,
@@ -394,6 +395,27 @@ const MOTIVO_BAJA_TXT: Record<MotivoBaja, string> = {
   cerro: "cierre del negocio",
   deuda: "deuda",
   otro: "otro motivo",
+}
+
+// Actividad de leads del equipo (para el dashboard admin). Un lead se considera
+// "contactado" cuando el vendedor lo clasificó (pasó a oportunidad o lo rechazó);
+// la fecha de contacto es updated_at. Los 'nuevo' todavía no se contactaron.
+export interface LeadActividad {
+  vendedor_id: string
+  estado: LeadEstado
+  contactado_at: string | null
+}
+
+export async function fetchLeadsEquipo(): Promise<LeadActividad[]> {
+  const { data, error } = await supabase.from("leads").select("vendedor_id, estado, updated_at")
+  if (error) throw new Error(error.message)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (data ?? []).map((r: any) => ({
+    vendedor_id: r.vendedor_id,
+    estado: r.estado,
+    contactado_at: r.estado !== "nuevo" ? r.updated_at : null,
+  }))
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
 // Tamaño del "cupo" diario: cuántos leads de la base trae cada vez.

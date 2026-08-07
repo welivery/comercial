@@ -8,6 +8,7 @@ import {
   fetchCreditosLeads,
   fetchEventos,
   fetchLeads,
+  fetchLeadsEquipo,
   fetchObjetivos,
   fetchOportunidad,
   fetchOportunidades,
@@ -60,6 +61,7 @@ export const useClientes = () => useAsync(() => fetchClientes(), [])
 export const useContexto = () => useAsync(() => fetchContexto(), [])
 export const useLeads = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchLeads(vendedorId) : Promise.resolve([])), [vendedorId])
+export const useLeadsEquipo = () => useAsync(() => fetchLeadsEquipo(), [])
 export const useCreditosLeads = (vendedorId: string | undefined, periodo: string) =>
   useAsync(
     () => (vendedorId ? fetchCreditosLeads(vendedorId, periodo) : Promise.resolve({ limite: 0, usados: 0 })),
