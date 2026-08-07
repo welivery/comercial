@@ -14,7 +14,7 @@ import {
   type ClienteInput,
 } from "@/data/api"
 import { CSV_PLANTILLA, parseClientesCsv, type ParseResult } from "@/lib/csv"
-import { BUCKETS, BUCKET_LABEL } from "@/lib/buckets"
+import { segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, iniciales } from "@/lib/display"
 import { cn } from "@/lib/utils"
 import type { Cliente, MotivoBaja, SegmentoCliente } from "@/lib/types"
@@ -46,6 +46,7 @@ export function AdminClientes() {
   const { data: clientes, loading, error, reload } = useClientes()
   const { data: vendedores } = useVendedores()
   const { data: contexto } = useContexto()
+  const segsCliente = segmentosActivos(useSegmentos())
   const CLIENTES = clientes ?? []
   const vends = vendedores ?? []
 
@@ -236,7 +237,7 @@ export function AdminClientes() {
               <th className="px-4 py-2.5 font-medium">Empresa</th>
               <th className="px-4 py-2.5 font-medium">Segmento</th>
               <th className="px-4 py-2.5 font-medium">Envíos/mes</th>
-              <th className="px-4 py-2.5 font-medium">Tipo</th>
+              <th className="px-4 py-2.5 font-medium">Clasificación</th>
               <th className="px-4 py-2.5 font-medium">Vendedor</th>
               <th className="px-4 py-2.5 font-medium">Motivo / nota</th>
               <th className="px-4 py-2.5" />
@@ -349,15 +350,15 @@ export function AdminClientes() {
             </Campo>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Campo label="Tipo (bucket)">
+            <Campo label="Clasificación">
               <select
                 value={form.bucket}
                 onChange={(e) => setForm({ ...form, bucket: e.target.value as ClienteInput["bucket"] })}
                 className="inp"
               >
-                {BUCKETS.map((b) => (
-                  <option key={b} value={b}>
-                    {BUCKET_LABEL[b]}
+                {segsCliente.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nombre}
                   </option>
                 ))}
               </select>

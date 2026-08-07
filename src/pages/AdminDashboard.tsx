@@ -9,7 +9,7 @@ import { BucketChip, Cargando, ErrorMsg, MixBar, Progress, VAvatar } from "@/com
 import { useLeadsEquipo, useObjetivos, useOportunidades, useVendedores } from "@/hooks/useData"
 import type { LeadActividad, VendedorRow } from "@/data/api"
 import { avanceEquipo, avanceVendedor, embudo } from "@/lib/metrics"
-import { BUCKET_COLOR, BUCKET_LABEL, UMBRAL_ESTRATEGICO } from "@/lib/buckets"
+import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { ESTADO_COLOR, ESTADO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
 import { cn } from "@/lib/utils"
 
@@ -18,11 +18,13 @@ export function AdminDashboard() {
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const { data: oportunidades, loading, error } = useOportunidades()
   const { data: actividadLeads } = useLeadsEquipo()
+  const segsReg = useSegmentos()
+  const activos = useMemo(() => segmentosActivos(segsReg), [segsReg])
   const ops = oportunidades ?? []
   const objs = objetivos ?? []
   const vends = vendedores ?? []
 
-  const eq = useMemo(() => avanceEquipo(ops, objs, PERIODO_ACTUAL), [ops, objs])
+  const eq = useMemo(() => avanceEquipo(ops, objs, PERIODO_ACTUAL, activos), [ops, objs, activos])
   const fun = useMemo(() => embudo(ops), [ops])
   const base = fun[0]?.cantidad || 1
 
@@ -31,9 +33,9 @@ export function AdminDashboard() {
       vends.map((v) => {
         const vops = ops.filter((o) => o.vendedor_id === v.id)
         const obj = objs.find((o) => o.vendedor_id === v.id)
-        return { v, av: avanceVendedor(vops, obj, PERIODO_ACTUAL) }
+        return { v, av: avanceVendedor(vops, obj, PERIODO_ACTUAL, activos) }
       }),
-    [vends, ops, objs]
+    [vends, ops, objs, activos]
   )
 
   if (loading) return <Cargando que="el dashboard" />
@@ -162,13 +164,13 @@ export function AdminDashboard() {
         <div className="grid gap-4">
           <Card className="p-4">
             <h2 className="text-[14px] font-semibold text-navy">Mezcla de tipos · equipo</h2>
-            <p className="mb-3.5 mt-0.5 text-xs text-slate">Buckets con prioridad · real vs objetivo</p>
+            <p className="mb-3.5 mt-0.5 text-xs text-slate">Segmentos de cliente · real vs objetivo</p>
             <MixBar mix={eq.mix} className="h-3.5" />
             <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
               {eq.mix.map((m) => (
                 <div key={m.bucket} className="flex items-center gap-1.5 text-[12px]">
-                  <span className="size-2 rounded-full" style={{ background: BUCKET_COLOR[m.bucket] }} />
-                  <b className="font-semibold text-ink">{BUCKET_LABEL[m.bucket]}</b>
+                  <span className="size-2 rounded-full" style={{ background: segColor(m.bucket, activos) }} />
+                  <b className="font-semibold text-ink">{segLabel(m.bucket, activos)}</b>
                   <span className="text-slate">
                     {m.pct}% · obj {m.objetivoPct}%
                   </span>
@@ -176,8 +178,8 @@ export function AdminDashboard() {
               ))}
             </div>
             <p className="mt-3 text-[11.5px] leading-relaxed text-slate">
-              Estratégico = marca reconocida o +{UMBRAL_ESTRATEGICO.toLocaleString("es-CL")}{" "}
-              envíos/mes. Prioridad: Estratégico → Fulfillment → Mediano.
+              Segmentos por volumen de envíos (configurables en Objetivos):{" "}
+              {activos.map((s) => s.nombre).join(" → ")}.
             </p>
           </Card>
 
@@ -214,7 +216,7 @@ export function AdminDashboard() {
       <ActividadLeads vendedores={vends} actividad={actividadLeads ?? []} />
 
       <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
-        <BucketChip bucket="estrategico" />
+        <BucketChip bucket={activos[0]?.id ?? "estrategico"} />
         <p className="leading-relaxed">
           Todo el pipeline se mide sobre la misma oportunidad: el objetivo cuenta las que llegan a{" "}
           <b className="font-semibold text-ink">Reunión efectiva</b>; cierre y tiempo-a-cierre salen
