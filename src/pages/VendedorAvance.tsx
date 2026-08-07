@@ -9,13 +9,16 @@ import { Cargando, ErrorMsg, Progress } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useLeads, useObjetivos, useOportunidades } from "@/hooks/useData"
 import { avanceVendedor } from "@/lib/metrics"
-import { BUCKET_COLOR, BUCKET_LABEL } from "@/lib/buckets"
+import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { HOY, PERIODO_ACTUAL, enPeriodo, tuvoReunionEfectiva } from "@/lib/display"
+import type { Segmento } from "@/lib/types"
 
-const SUBTITULO_BUCKET: Record<string, string> = {
-  estrategico: "marca reconocida o +1.000 envíos",
-  fulfillment: "quieren almacenamiento + fulfillment",
-  mediano: "resto de los clientes",
+// Subtítulo de cada segmento, derivado de su definición (no hardcodeado).
+function subtituloSegmento(s: Segmento | undefined): string {
+  if (!s) return ""
+  if (s.tipo === "especial") return "quieren almacenamiento + fulfillment"
+  const min = s.envios_min ?? 0
+  return min > 0 ? `≥ ${min.toLocaleString("es-CL")} envíos/mes` : "menor volumen · el que menos queremos sumar"
 }
 
 // Mensajes motivacionales (rotan por día) que conectan leads → reuniones → meta.
@@ -34,11 +37,13 @@ export function VendedorAvance() {
   const { data: oportunidades, loading, error } = useOportunidades(vendedor.id)
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const { data: leadsData } = useLeads(vendedor.id)
+  const segsReg = useSegmentos()
+  const activos = useMemo(() => segmentosActivos(segsReg), [segsReg])
   const ops = useMemo(() => oportunidades ?? [], [oportunidades])
   const av = useMemo(() => {
     const obj = (objetivos ?? []).find((o) => o.vendedor_id === vendedor.id)
-    return avanceVendedor(ops, obj, PERIODO_ACTUAL)
-  }, [ops, objetivos, vendedor.id])
+    return avanceVendedor(ops, obj, PERIODO_ACTUAL, activos)
+  }, [ops, objetivos, vendedor.id, activos])
 
   const leadsNuevos = (leadsData ?? []).filter((l) => l.estado === "nuevo").length
   const leadsTrabajados = (leadsData ?? []).filter((l) => l.estado !== "nuevo").length
@@ -49,10 +54,12 @@ export function VendedorAvance() {
   const diasRestantes = Math.max(0, diasEnMes - hoyDia)
   const mensaje = MENSAJES[hoyDia % MENSAJES.length]
 
-  // Objetivo por bucket en CANTIDAD (no %), y cuánto falta del estratégico.
+  // Objetivo por segmento en CANTIDAD (no %), y cuánto falta del prioritario
+  // (el primer segmento activo por orden = el más valioso).
   const mixCant = av.mix.map((m) => ({ ...m, objetivoCant: Math.round((m.objetivoPct / 100) * av.objetivo) }))
-  const estr = mixCant.find((m) => m.bucket === "estrategico")
-  const faltaEstr = estr ? Math.max(0, estr.objetivoCant - estr.cantidad) : 0
+  const topSeg = activos[0]
+  const topCant = topSeg ? mixCant.find((m) => m.bucket === topSeg.id) : undefined
+  const faltaTop = topCant ? Math.max(0, topCant.objetivoCant - topCant.cantidad) : 0
 
   // Ritmo REAL: reuniones efectivas acumuladas por día del mes.
   const ritmo = useMemo(() => {
@@ -198,24 +205,28 @@ export function VendedorAvance() {
         <Card className="p-[18px]">
           <h2 className="text-[15px] font-semibold text-navy">Reuniones por tipo de cliente</h2>
           <p className="mb-4 mt-0.5 text-xs text-slate">Cuántas efectivas llevás de cada tipo, sobre las que necesitás</p>
-          {mixCant.map((m) => (
-            <div key={m.bucket} className="flex items-center gap-3.5 border-b border-border py-3 last:border-b-0">
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: BUCKET_COLOR[m.bucket] + "1F" }}>
-                <span className="size-2.5 rounded-full" style={{ background: BUCKET_COLOR[m.bucket] }} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-ink">{BUCKET_LABEL[m.bucket]}</div>
-                <div className="text-[11px] text-slate">{SUBTITULO_BUCKET[m.bucket]}</div>
+          {mixCant.map((m) => {
+            const seg = activos.find((s) => s.id === m.bucket)
+            const color = segColor(m.bucket, activos)
+            return (
+              <div key={m.bucket} className="flex items-center gap-3.5 border-b border-border py-3 last:border-b-0">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: color + "1F" }}>
+                  <span className="size-2.5 rounded-full" style={{ background: color }} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-medium text-ink">{segLabel(m.bucket, activos)}</div>
+                  <div className="text-[11px] text-slate">{subtituloSegmento(seg)}</div>
+                </div>
+                <Progress value={m.cantidad} max={Math.max(1, m.objetivoCant)} color={color} className="w-28" />
+                <div className="w-[64px] text-right text-[13px] font-semibold tabular-nums text-ink">
+                  {m.cantidad}<span className="font-normal text-slate"> / {m.objetivoCant}</span>
+                </div>
               </div>
-              <Progress value={m.cantidad} max={Math.max(1, m.objetivoCant)} color={BUCKET_COLOR[m.bucket]} className="w-28" />
-              <div className="w-[64px] text-right text-[13px] font-semibold tabular-nums text-ink">
-                {m.cantidad}<span className="font-normal text-slate"> / {m.objetivoCant}</span>
-              </div>
-            </div>
-          ))}
+            )
+          })}
           <p className="mt-3.5 text-[11.5px] leading-relaxed text-slate">
-            {faltaEstr > 0
-              ? `Te faltan ${faltaEstr} reunión${faltaEstr === 1 ? "" : "es"} con clientes Estratégicos (marca reconocida o +1.000 envíos) para cumplir tu mezcla.`
+            {faltaTop > 0 && topSeg
+              ? `Te faltan ${faltaTop} reunión${faltaTop === 1 ? "" : "es"} con clientes ${topSeg.nombre} para cumplir tu mezcla — son los de mayor valor.`
               : "Vas bien con la mezcla de tipos de cliente. 👌"}
           </p>
         </Card>
