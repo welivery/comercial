@@ -18,7 +18,9 @@ import type {
   Oportunidad,
   OportunidadEvento,
   OrigenOportunidad,
+  Segmento,
   SegmentoCliente,
+  SegmentoTipo,
   Vendedor,
 } from "@/lib/types"
 
@@ -49,7 +51,20 @@ function mapObjetivo(r: any): Objetivo {
     vendedor_id: r.vendedor_id,
     periodo: r.periodo,
     reuniones_efectivas: r.reuniones_efectivas,
-    mix: { estrategico: r.mix_estrategico, fulfillment: r.mix_fulfillment, mediano: r.mix_mediano },
+    mix: (r.mix ?? {}) as Record<string, number>,
+  }
+}
+
+function mapSegmento(r: any): Segmento {
+  return {
+    id: r.id,
+    nombre: r.nombre,
+    tipo: r.tipo as SegmentoTipo,
+    envios_min: r.envios_min ?? null,
+    regla: r.regla ?? null,
+    color: r.color ?? "#7A869C",
+    orden: r.orden ?? 0,
+    activo: r.activo ?? true,
   }
 }
 
@@ -209,23 +224,53 @@ export async function fetchObjetivos(periodo: string): Promise<Objetivo[]> {
 }
 
 // Alta/edición del objetivo mensual de un vendedor (upsert por vendedor+período).
+// El mix es un mapa { segmentoId: porcentaje } que debe sumar 100.
 export async function guardarObjetivo(
   vendedorId: string,
   periodo: string,
   reuniones: number,
-  mix: { estrategico: number; fulfillment: number; mediano: number }
+  mix: Record<string, number>
 ): Promise<void> {
   const { error } = await supabase.from("objetivos").upsert(
     {
       vendedor_id: vendedorId,
       periodo,
       reuniones_efectivas: reuniones,
-      mix_estrategico: mix.estrategico,
-      mix_fulfillment: mix.fulfillment,
-      mix_mediano: mix.mediano,
+      mix,
     },
     { onConflict: "vendedor_id,periodo" }
   )
+  if (error) throw new Error(error.message)
+}
+
+// ─────────────────────────────── Segmentos ───────────────────────────────
+// Clasificaciones de cliente configurables por el admin (Estratégico, Mediano,
+// Chico, Fulfillment…). Se cargan una vez en el registro reactivo (lib/buckets).
+export async function fetchSegmentos(): Promise<Segmento[]> {
+  const { data, error } = await supabase.from("segmentos").select("*").order("orden")
+  return check(data, error).map(mapSegmento)
+}
+
+// Alta/edición de un segmento (upsert por id).
+export async function guardarSegmento(s: Segmento): Promise<void> {
+  const { error } = await supabase.from("segmentos").upsert(
+    {
+      id: s.id,
+      nombre: s.nombre,
+      tipo: s.tipo,
+      envios_min: s.tipo === "volumen" ? (s.envios_min ?? 0) : null,
+      regla: s.tipo === "especial" ? (s.regla ?? "fulfillment") : null,
+      color: s.color,
+      orden: s.orden,
+      activo: s.activo,
+    },
+    { onConflict: "id" }
+  )
+  if (error) throw new Error(error.message)
+}
+
+export async function eliminarSegmento(id: string): Promise<void> {
+  const { error } = await supabase.from("segmentos").delete().eq("id", id)
   if (error) throw new Error(error.message)
 }
 
