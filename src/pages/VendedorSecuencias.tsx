@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import {
   Check,
   Copy,
@@ -8,6 +9,8 @@ import {
   Play,
   Plus,
   Send,
+  ThumbsDown,
+  ThumbsUp,
   Trash2,
   X,
 } from "lucide-react"
@@ -29,10 +32,11 @@ import {
   fetchPasos,
   guardarPasos,
   inscribir,
+  rechazarLead,
   type PasoInput,
 } from "@/data/api"
 import { cn } from "@/lib/utils"
-import type { InscripcionEstado, Secuencia, SecuenciaObjetivo } from "@/lib/types"
+import type { InscripcionEstado, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
 
 const OBJETIVO_LABEL: Record<SecuenciaObjetivo, string> = {
   reactivacion: "Reactivación",
@@ -176,6 +180,40 @@ export function VendedorSecuencias() {
       setErrEditor(e instanceof Error ? e.message : "No se pudo guardar")
     } finally {
       setGuardando(false)
+    }
+  }
+
+  // ── Cierre del círculo desde la respuesta ──────────────────────────────────
+  // Las que respondieron van primero (esperan acción del vendedor).
+  const respondieron = useMemo(() => inscripciones.filter((i) => i.estado === "respondio").length, [inscripciones])
+  const inscOrdenadas = useMemo(() => {
+    const rank = (e: InscripcionEstado) => (e === "respondio" ? 0 : e === "activa" ? 1 : e === "pausada" ? 2 : 3)
+    return [...inscripciones].sort((a, b) => rank(a.estado) - rank(b.estado))
+  }, [inscripciones])
+  // Un lead solo se puede pasar a oportunidad si sigue "nuevo".
+  const leadConvertible = (id: string | null) => !!id && leads.some((l) => l.id === id && l.estado === "nuevo")
+
+  async function marcarRespondio(ins: SecuenciaInscripcion) {
+    try {
+      await actualizarInscripcion(ins.id, "respondio")
+      reloadInsc()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "No se pudo actualizar")
+    }
+  }
+  async function noInteresado(ins: SecuenciaInscripcion) {
+    if (
+      !window.confirm(
+        "¿Marcar como no interesado? Se corta la secuencia" + (ins.lead_id ? " y se rechaza el lead." : ".")
+      )
+    )
+      return
+    try {
+      if (ins.lead_id) await rechazarLead(ins.lead_id, "no_interesado")
+      await actualizarInscripcion(ins.id, "terminada")
+      reloadInsc()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "No se pudo actualizar")
     }
   }
 
@@ -401,7 +439,15 @@ export function VendedorSecuencias() {
       </div>
 
       {/* Inscripciones */}
-      <h2 className="mb-3 mt-7 text-[15px] font-semibold text-navy">Contactos en secuencia</h2>
+      <div className="mb-3 mt-7 flex flex-wrap items-center gap-3">
+        <h2 className="text-[15px] font-semibold text-navy">Contactos en secuencia</h2>
+        {respondieron > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#DFF2E9] px-2.5 py-1 text-[11.5px] font-semibold text-success">
+            <ThumbsUp size={12} />
+            {respondieron} respondi{respondieron === 1 ? "ó" : "eron"} · esperan tu decisión
+          </span>
+        )}
+      </div>
       {inscripciones.length === 0 ? (
         <Card className="p-6 text-center text-[13px] text-slate">
           Todavía no inscribiste a nadie. Usá “Inscribir contacto” para arrancar una cadencia.
@@ -419,10 +465,12 @@ export function VendedorSecuencias() {
               </tr>
             </thead>
             <tbody>
-              {inscripciones.map((ins) => {
+              {inscOrdenadas.map((ins) => {
                 const seq = secuencias.find((s) => s.id === ins.secuencia_id)
+                const respondio = ins.estado === "respondio"
+                const enCurso = ins.estado === "activa" || ins.estado === "pausada"
                 return (
-                  <tr key={ins.id} className="border-t border-border">
+                  <tr key={ins.id} className={cn("border-t border-border", respondio && "bg-[#EEF3FE]")}>
                     <td className="px-4 py-3">
                       <div className="text-[13px] font-medium text-ink">{ins.destinatario_nombre || "—"}</div>
                       <div className="text-[11.5px] text-slate">{ins.destinatario_email}</div>
@@ -438,24 +486,63 @@ export function VendedorSecuencias() {
                     </td>
                     <td className="px-4 py-3 text-[12.5px] tabular-nums text-slate">{ins.paso_actual}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {ins.estado === "activa" ? (
-                          <button
-                            onClick={() => actualizarInscripcion(ins.id, "pausada").then(reloadInsc)}
-                            title="Pausar"
-                            className="grid size-8 place-items-center rounded-md text-slate hover:bg-mist"
-                          >
-                            <Pause size={15} />
-                          </button>
-                        ) : ins.estado === "pausada" ? (
-                          <button
-                            onClick={() => actualizarInscripcion(ins.id, "activa").then(reloadInsc)}
-                            title="Reanudar"
-                            className="grid size-8 place-items-center rounded-md text-slate hover:bg-mist"
-                          >
-                            <Play size={15} />
-                          </button>
-                        ) : null}
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {/* Respondió → decidir: oportunidad o rechazo */}
+                        {respondio && (
+                          <>
+                            {leadConvertible(ins.lead_id) ? (
+                              <Button asChild size="sm" variant="blue">
+                                <Link to={`/leads?convertir=${ins.lead_id}`}>
+                                  <Plus /> Pasar a oportunidad
+                                </Link>
+                              </Button>
+                            ) : ins.lead_id ? (
+                              <span className="text-[11.5px] text-slate">Lead ya clasificado</span>
+                            ) : null}
+                            <Button size="sm" variant="outline" onClick={() => noInteresado(ins)}>
+                              <ThumbsDown /> No sirvió
+                            </Button>
+                          </>
+                        )}
+                        {/* En curso → marcar respuesta a mano (hasta la detección automática) */}
+                        {enCurso && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-success"
+                              title="Marcar que respondió con interés"
+                              onClick={() => marcarRespondio(ins)}
+                            >
+                              <ThumbsUp /> Respondió
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              title="No interesado — corta la secuencia y rechaza el lead"
+                              onClick={() => noInteresado(ins)}
+                            >
+                              <ThumbsDown /> No
+                            </Button>
+                            {ins.estado === "activa" ? (
+                              <button
+                                onClick={() => actualizarInscripcion(ins.id, "pausada").then(reloadInsc)}
+                                title="Pausar"
+                                className="grid size-8 place-items-center rounded-md text-slate hover:bg-mist"
+                              >
+                                <Pause size={15} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => actualizarInscripcion(ins.id, "activa").then(reloadInsc)}
+                                title="Reanudar"
+                                className="grid size-8 place-items-center rounded-md text-slate hover:bg-mist"
+                              >
+                                <Play size={15} />
+                              </button>
+                            )}
+                          </>
+                        )}
                         <button
                           onClick={() => {
                             if (window.confirm("¿Sacar a este contacto de la secuencia?"))

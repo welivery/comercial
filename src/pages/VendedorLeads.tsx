@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useRef, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import {
   Ban,
   Building2,
@@ -167,6 +167,18 @@ export function VendedorLeads() {
       vivoRef.current = false
     }
   }, [])
+
+  // Si venimos de Secuencias con ?convertir=<leadId>, abrimos el modal de
+  // "pasar a oportunidad" para ese lead (y limpiamos el parámetro).
+  const [searchParams, setSearchParams] = useSearchParams()
+  const convParam = searchParams.get("convertir")
+  useEffect(() => {
+    if (!convParam || loading) return
+    const l = leads.find((x) => x.id === convParam)
+    if (l && l.estado === "nuevo") abrirConvertir(l)
+    searchParams.delete("convertir")
+    setSearchParams(searchParams, { replace: true })
+  }, [convParam, loading, leads]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function buscar() {
     if (!vendedor.id || buscando) return
