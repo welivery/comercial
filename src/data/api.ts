@@ -111,6 +111,10 @@ function mapCliente(r: any): Cliente {
     bucket: r.bucket as Bucket,
     vendedor_id: r.vendedor_id,
     motivo_baja: (r.motivo_baja ?? null) as MotivoBaja | null,
+    contacto: r.contacto ?? null,
+    email: r.email ?? null,
+    telefono: r.telefono ?? null,
+    comuna: r.comuna ?? null,
     nota: r.nota ?? "",
   }
 }
@@ -364,6 +368,10 @@ export interface ClienteInput {
   bucket: Bucket
   vendedor_id: string | null
   motivo_baja: MotivoBaja | null
+  contacto: string | null
+  email: string | null
+  telefono: string | null
+  comuna: string | null
   nota: string
 }
 
@@ -484,7 +492,7 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
   const [baseRes, leadsRes] = await Promise.all([
     supabase
       .from("clientes")
-      .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id")
+      .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id, contacto, email, telefono, comuna")
       .in("segmento", ["ex_cliente", "prospeccion"])
       .or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
       .order("envios_mes", { ascending: false }),
@@ -501,6 +509,8 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
     if (yaHay.has(clave) || vistos.has(clave)) continue
     vistos.add(clave)
     const esEx = c.segmento === "ex_cliente"
+    // El contacto (persona/email/tel/comuna) ya son campos propios; el motivo
+    // solo describe POR QUÉ es un lead, sin repetir datos de contacto.
     const motivo = esEx
       ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
         (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
@@ -519,6 +529,8 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
         fit: esEx ? 70 : 60,
         reconquista: esEx,
         motivo,
+        email: c.email ?? null,
+        telefono: c.telefono ?? null,
         fuentes: [{ tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null }],
         origen: "base",
         estado: "nuevo",

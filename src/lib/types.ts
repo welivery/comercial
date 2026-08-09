@@ -107,6 +107,10 @@ export interface Cliente {
   bucket: Bucket
   vendedor_id: string | null
   motivo_baja: MotivoBaja | null
+  contacto: string | null // persona de contacto
+  email: string | null
+  telefono: string | null
+  comuna: string | null
   nota: string
 }
 

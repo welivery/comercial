@@ -38,6 +38,10 @@ const VACIO: ClienteInput = {
   bucket: "mediano",
   vendedor_id: null,
   motivo_baja: null,
+  contacto: null,
+  email: null,
+  telefono: null,
+  comuna: null,
   nota: "",
 }
 
@@ -138,6 +142,10 @@ export function AdminClientes() {
       bucket: c.bucket,
       vendedor_id: c.vendedor_id,
       motivo_baja: c.motivo_baja,
+      contacto: c.contacto,
+      email: c.email,
+      telefono: c.telefono,
+      comuna: c.comuna,
       nota: c.nota,
     })
     setErrForm(null)
@@ -238,6 +246,7 @@ export function AdminClientes() {
               <th className="px-4 py-2.5 font-medium">Segmento</th>
               <th className="px-4 py-2.5 font-medium">Envíos/mes</th>
               <th className="px-4 py-2.5 font-medium">Clasificación</th>
+              <th className="px-4 py-2.5 font-medium">Contacto</th>
               <th className="px-4 py-2.5 font-medium">Vendedor</th>
               <th className="px-4 py-2.5 font-medium">Motivo / nota</th>
               <th className="px-4 py-2.5" />
@@ -260,6 +269,21 @@ export function AdminClientes() {
                 <td className="px-4 py-3 text-[13px] tabular-nums text-ink">{fmtEnvios(c.envios_mes)}</td>
                 <td className="px-4 py-3">
                   <BucketChip bucket={c.bucket} short />
+                </td>
+                <td className="px-4 py-3 text-[12px] text-slate">
+                  {c.email || c.telefono || c.contacto ? (
+                    <div className="flex flex-col gap-0.5">
+                      {c.contacto && <span className="text-ink">{c.contacto}</span>}
+                      {c.email && (
+                        <a href={`mailto:${c.email}`} className="text-blue hover:underline">
+                          {c.email}
+                        </a>
+                      )}
+                      {c.telefono && <span>{c.telefono}</span>}
+                    </div>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td className="px-4 py-3 text-[13px] text-slate">{nombreVendedor(c.vendedor_id) ?? "—"}</td>
                 <td className="px-4 py-3 text-[12px] text-slate">
@@ -295,7 +319,7 @@ export function AdminClientes() {
             ))}
             {filtrados.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-[13px] text-slate">
+                <td colSpan={8} className="px-4 py-8 text-center text-[13px] text-slate">
                   No hay clientes en este segmento.
                 </td>
               </tr>
@@ -378,6 +402,43 @@ export function AdminClientes() {
               </select>
             </Campo>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Contacto">
+              <input
+                value={form.contacto ?? ""}
+                onChange={(e) => setForm({ ...form, contacto: e.target.value || null })}
+                className="inp"
+                placeholder="Persona de contacto"
+              />
+            </Campo>
+            <Campo label="Comuna">
+              <input
+                value={form.comuna ?? ""}
+                onChange={(e) => setForm({ ...form, comuna: e.target.value || null })}
+                className="inp"
+                placeholder="Providencia, Las Condes…"
+              />
+            </Campo>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Campo label="Email">
+              <input
+                type="email"
+                value={form.email ?? ""}
+                onChange={(e) => setForm({ ...form, email: e.target.value || null })}
+                className="inp"
+                placeholder="ventas@empresa.cl"
+              />
+            </Campo>
+            <Campo label="Teléfono">
+              <input
+                value={form.telefono ?? ""}
+                onChange={(e) => setForm({ ...form, telefono: e.target.value || null })}
+                className="inp"
+                placeholder="+56 9 …"
+              />
+            </Campo>
+          </div>
           {form.segmento === "ex_cliente" && (
             <Campo label="Motivo de baja">
               <select
@@ -430,6 +491,10 @@ export function AdminClientes() {
                   <Fila k="envios_mes" v="número (ej: 890)" />
                   <Fila k="bucket" v="estrategico · fulfillment · mediano (opcional; si vacío se calcula)" />
                   <Fila k="vendedor_email" v="email del vendedor (opcional)" />
+                  <Fila k="contacto" v="persona de contacto (opcional)" />
+                  <Fila k="email" v="email del cliente — se usa para secuencias (opcional)" />
+                  <Fila k="telefono" v="teléfono del cliente (opcional)" />
+                  <Fila k="comuna" v="comuna (opcional)" />
                   <Fila k="motivo_baja" v="precio · servicio · cerro · deuda · otro (solo ex_cliente)" />
                   <Fila k="nota" v="texto libre (opcional)" />
                 </tbody>
@@ -449,7 +514,7 @@ export function AdminClientes() {
             rows={4}
             onChange={(e) => analizar(e.target.value, "pegado")}
             className="inp font-mono text-[12px]"
-            placeholder="nombre,segmento,envios_mes,bucket,vendedor_email,motivo_baja,nota"
+            placeholder="nombre,segmento,envios_mes,bucket,vendedor_email,contacto,email,telefono,comuna,motivo_baja,nota"
           />
 
           {impResult && (
