@@ -21,7 +21,7 @@ import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando } from "@/components/widgets"
 import { useVentas } from "@/store"
-import { useCreditosLeads, useLeads } from "@/hooks/useData"
+import { useCreditosLeads, useLeads, useObjetivos } from "@/hooks/useData"
 import { convertirLead, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
 import { generarLeadsIA } from "@/data/leads"
 import { asignarBucket } from "@/lib/buckets"
@@ -71,10 +71,33 @@ interface OpForm {
 }
 
 export function VendedorLeads() {
-  const { vendedor } = useVentas()
+  const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId } = useVentas()
   const { data: leadsData, loading, error, reload } = useLeads(vendedor.id)
   const { data: creditos, reload: reloadCred } = useCreditosLeads(vendedor.id, PERIODO_ACTUAL)
+  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const leads = useMemo(() => leadsData ?? [], [leadsData])
+
+  // Cupo diario configurado en Objetivos para este vendedor.
+  const cupoDiario = objetivos?.find((o) => o.vendedor_id === vendedor.id)?.leads_cupo_diario ?? 0
+
+  // Auto-carga diaria: al entrar, si el vendedor todavía no recibió su cupo de
+  // hoy, se le suman leads de su base (gratis). Solo para el vendedor logueado
+  // (no cuando el admin previsualiza), y una vez por carga de página.
+  const autoRef = useRef(false)
+  useEffect(() => {
+    if (rol !== "vendedor" || !vendedor.id || cupoDiario <= 0 || loading) return
+    if (autoRef.current) return
+    autoRef.current = true
+    const hoy = new Date()
+    hoy.setHours(0, 0, 0, 0)
+    const recibioHoy = leads.some((l) => new Date(l.created_at).getTime() >= hoy.getTime())
+    if (recibioHoy) return
+    sembrarLeadsBase(vendedor.id, cupoDiario)
+      .then((n) => {
+        if (n > 0 && vivoRef.current) reload()
+      })
+      .catch(() => {})
+  }, [rol, vendedor.id, cupoDiario, loading, leads, reload])
 
   const [buscando, setBuscando] = useState(false)
   const [trayendo, setTrayendo] = useState(false)
@@ -247,7 +270,24 @@ export function VendedorLeads() {
 
   return (
     <>
-      <PageHead titulo="Buscar leads" descripcion="Potenciales clientes para prospectar y clasificar" />
+      <PageHead titulo="Buscar leads" descripcion="Potenciales clientes para prospectar y clasificar">
+        {rol === "admin" && vendedores.length > 0 && (
+          <label className="flex items-center gap-2 text-[12px] text-slate">
+            Leads de
+            <select
+              value={verVendedorId ?? vendedor.id}
+              onChange={(e) => setVerVendedorId(e.target.value)}
+              className="rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+            >
+              {vendedores.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.nombre}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </PageHead>
 
       {/* Hero */}
       <div className="flex flex-wrap items-center gap-4 rounded-xl bg-gradient-to-br from-navy via-[#1d3a6b] to-[#123f52] p-5 text-white">

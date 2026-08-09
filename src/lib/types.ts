@@ -95,6 +95,7 @@ export interface Objetivo {
   periodo: string // "YYYY-MM"
   reuniones_efectivas: number
   mix: Record<Bucket, number> // porcentaje objetivo por bucket
+  leads_cupo_diario: number // leads nuevos que se le cargan automático por día
 }
 
 export interface Cliente {

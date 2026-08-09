@@ -25,10 +25,10 @@ export const VENDEDORES: Vendedor[] = [
 export const VENDEDOR_ACTUAL = "v1"
 
 export const OBJETIVOS: Objetivo[] = [
-  { id: "o1", vendedor_id: "v1", periodo: "2026-08", reuniones_efectivas: 12, mix: { estrategico: 40, fulfillment: 30, mediano: 30 } },
-  { id: "o2", vendedor_id: "v2", periodo: "2026-08", reuniones_efectivas: 12, mix: { estrategico: 35, fulfillment: 45, mediano: 20 } },
-  { id: "o3", vendedor_id: "v3", periodo: "2026-08", reuniones_efectivas: 12, mix: { estrategico: 45, fulfillment: 25, mediano: 30 } },
-  { id: "o4", vendedor_id: "v4", periodo: "2026-08", reuniones_efectivas: 10, mix: { estrategico: 30, fulfillment: 30, mediano: 40 } },
+  { id: "o1", vendedor_id: "v1", periodo: "2026-08", reuniones_efectivas: 12, mix: { estrategico: 40, fulfillment: 30, mediano: 30 }, leads_cupo_diario: 10 },
+  { id: "o2", vendedor_id: "v2", periodo: "2026-08", reuniones_efectivas: 12, mix: { estrategico: 35, fulfillment: 45, mediano: 20 }, leads_cupo_diario: 10 },
+  { id: "o3", vendedor_id: "v3", periodo: "2026-08", reuniones_efectivas: 12, mix: { estrategico: 45, fulfillment: 25, mediano: 30 }, leads_cupo_diario: 10 },
+  { id: "o4", vendedor_id: "v4", periodo: "2026-08", reuniones_efectivas: 10, mix: { estrategico: 30, fulfillment: 30, mediano: 40 }, leads_cupo_diario: 10 },
 ]
 
 // ─────────────────── Factory de oportunidades (terse) ───────────────────

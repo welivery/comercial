@@ -52,6 +52,7 @@ function mapObjetivo(r: any): Objetivo {
     periodo: r.periodo,
     reuniones_efectivas: r.reuniones_efectivas,
     mix: (r.mix ?? {}) as Record<string, number>,
+    leads_cupo_diario: r.leads_cupo_diario ?? 10,
   }
 }
 
@@ -229,7 +230,8 @@ export async function guardarObjetivo(
   vendedorId: string,
   periodo: string,
   reuniones: number,
-  mix: Record<string, number>
+  mix: Record<string, number>,
+  cupoLeads: number
 ): Promise<void> {
   const { error } = await supabase.from("objetivos").upsert(
     {
@@ -237,6 +239,7 @@ export async function guardarObjetivo(
       periodo,
       reuniones_efectivas: reuniones,
       mix,
+      leads_cupo_diario: cupoLeads,
     },
     { onConflict: "vendedor_id,periodo" }
   )

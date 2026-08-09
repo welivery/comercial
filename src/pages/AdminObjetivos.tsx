@@ -247,6 +247,7 @@ function ObjetivoEditor({
   }, [objetivo, ids.join(",")]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [reuniones, setReuniones] = useState(objetivo?.reuniones_efectivas ?? 12)
+  const [cupo, setCupo] = useState(objetivo?.leads_cupo_diario ?? 10)
   const [mix, setMix] = useState<Record<string, number>>(inicial)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
@@ -259,7 +260,7 @@ function ObjetivoEditor({
     setGuardando(true)
     setErr(null)
     try {
-      await guardarObjetivo(vendedor.id, PERIODO_ACTUAL, reuniones, mix)
+      await guardarObjetivo(vendedor.id, PERIODO_ACTUAL, reuniones, mix, cupo)
       setGuardado(true)
       setTimeout(() => setGuardado(false), 2500)
       onGuardado?.()
@@ -286,18 +287,37 @@ function ObjetivoEditor({
         </span>
       </div>
 
-      <label className="mb-1.5 block text-[11.5px] font-medium text-slate">
-        Reuniones efectivas objetivo (mes)
-      </label>
-      <div className="mb-4 flex w-[150px] items-center gap-2 rounded-lg border border-input px-3 py-2">
-        <input
-          type="number"
-          value={reuniones}
-          min={0}
-          onChange={(e) => setReuniones(Number(e.target.value))}
-          className="w-full bg-transparent text-[15px] font-semibold text-ink outline-none tabular-nums"
-        />
-        <span className="text-[12px] text-slate">reuniones</span>
+      <div className="mb-4 flex flex-wrap gap-4">
+        <div>
+          <label className="mb-1.5 block text-[11.5px] font-medium text-slate">
+            Reuniones efectivas objetivo (mes)
+          </label>
+          <div className="flex w-[160px] items-center gap-2 rounded-lg border border-input px-3 py-2">
+            <input
+              type="number"
+              value={reuniones}
+              min={0}
+              onChange={(e) => setReuniones(Number(e.target.value))}
+              className="w-full bg-transparent text-[15px] font-semibold text-ink outline-none tabular-nums"
+            />
+            <span className="text-[12px] text-slate">reuniones</span>
+          </div>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-[11.5px] font-medium text-slate">
+            Leads nuevos por día (automático)
+          </label>
+          <div className="flex w-[150px] items-center gap-2 rounded-lg border border-input px-3 py-2">
+            <input
+              type="number"
+              value={cupo}
+              min={0}
+              onChange={(e) => setCupo(Number(e.target.value))}
+              className="w-full bg-transparent text-[15px] font-semibold text-ink outline-none tabular-nums"
+            />
+            <span className="text-[12px] text-slate">leads/día</span>
+          </div>
+        </div>
       </div>
 
       <div className="mb-2 text-[11.5px] font-medium text-slate">
