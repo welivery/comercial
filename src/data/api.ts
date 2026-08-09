@@ -606,6 +606,188 @@ export async function fetchCreditosLeads(vendedorId: string, periodo: string): P
   }
 }
 
+// ─────────────────────────── Secuencias de email ───────────────────────────
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function mapSecuencia(r: any): Secuencia {
+  return {
+    id: r.id,
+    vendedor_id: r.vendedor_id ?? null,
+    nombre: r.nombre,
+    objetivo: r.objetivo as SecuenciaObjetivo,
+    activo: r.activo ?? true,
+    created_at: r.created_at,
+  }
+}
+function mapPaso(r: any): SecuenciaPaso {
+  return {
+    id: r.id,
+    secuencia_id: r.secuencia_id,
+    orden: r.orden,
+    dias_espera: r.dias_espera ?? 0,
+    asunto: r.asunto ?? "",
+    cuerpo: r.cuerpo ?? "",
+    activo: r.activo ?? true,
+  }
+}
+function mapInscripcion(r: any): SecuenciaInscripcion {
+  return {
+    id: r.id,
+    secuencia_id: r.secuencia_id,
+    vendedor_id: r.vendedor_id,
+    lead_id: r.lead_id ?? null,
+    destinatario_nombre: r.destinatario_nombre ?? "",
+    destinatario_email: r.destinatario_email ?? "",
+    estado: r.estado as InscripcionEstado,
+    paso_actual: r.paso_actual ?? 0,
+    proximo_envio_at: r.proximo_envio_at ?? null,
+    created_at: r.created_at,
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// Secuencias del vendedor + las plantillas compartidas (vendedor_id null).
+export async function fetchSecuencias(vendedorId: string): Promise<Secuencia[]> {
+  let q = supabase.from("secuencias").select("*").order("created_at", { ascending: false })
+  if (vendedorId) q = q.or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
+  const { data, error } = await q
+  return check(data, error).map(mapSecuencia)
+}
+
+export async function fetchPasos(secuenciaId: string): Promise<SecuenciaPaso[]> {
+  const { data, error } = await supabase
+    .from("secuencia_pasos")
+    .select("*")
+    .eq("secuencia_id", secuenciaId)
+    .order("orden")
+  return check(data, error).map(mapPaso)
+}
+
+export async function crearSecuencia(
+  vendedorId: string,
+  nombre: string,
+  objetivo: SecuenciaObjetivo
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("secuencias")
+    .insert({ vendedor_id: vendedorId, nombre, objetivo })
+    .select("id")
+    .single()
+  if (error) throw new Error(error.message)
+  return (data as { id: string }).id
+}
+
+export async function actualizarSecuencia(
+  id: string,
+  patch: Partial<{ nombre: string; objetivo: SecuenciaObjetivo; activo: boolean }>
+): Promise<void> {
+  const { error } = await supabase.from("secuencias").update(patch).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function eliminarSecuencia(id: string): Promise<void> {
+  const { error } = await supabase.from("secuencias").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+// Duplica una secuencia (típicamente una plantilla) como propia del vendedor.
+export async function duplicarSecuencia(secuenciaId: string, vendedorId: string): Promise<string> {
+  const [seqRes, pasos] = await Promise.all([
+    supabase.from("secuencias").select("*").eq("id", secuenciaId).single(),
+    fetchPasos(secuenciaId),
+  ])
+  if (seqRes.error) throw new Error(seqRes.error.message)
+  const orig = mapSecuencia(seqRes.data)
+  const nuevoId = await crearSecuencia(vendedorId, `${orig.nombre} (copia)`, orig.objetivo)
+  if (pasos.length) {
+    const { error } = await supabase.from("secuencia_pasos").insert(
+      pasos.map((p) => ({
+        secuencia_id: nuevoId,
+        orden: p.orden,
+        dias_espera: p.dias_espera,
+        asunto: p.asunto,
+        cuerpo: p.cuerpo,
+        activo: p.activo,
+      }))
+    )
+    if (error) throw new Error(error.message)
+  }
+  return nuevoId
+}
+
+export interface PasoInput {
+  orden: number
+  dias_espera: number
+  asunto: string
+  cuerpo: string
+  activo: boolean
+}
+
+// Reemplaza todos los pasos de una secuencia por la lista dada (borra + inserta).
+export async function guardarPasos(secuenciaId: string, pasos: PasoInput[]): Promise<void> {
+  const del = await supabase.from("secuencia_pasos").delete().eq("secuencia_id", secuenciaId)
+  if (del.error) throw new Error(del.error.message)
+  if (!pasos.length) return
+  const { error } = await supabase.from("secuencia_pasos").insert(
+    pasos.map((p, i) => ({
+      secuencia_id: secuenciaId,
+      orden: i + 1,
+      dias_espera: p.dias_espera,
+      asunto: p.asunto,
+      cuerpo: p.cuerpo,
+      activo: p.activo,
+    }))
+  )
+  if (error) throw new Error(error.message)
+}
+
+export async function fetchInscripciones(vendedorId: string): Promise<SecuenciaInscripcion[]> {
+  if (!vendedorId) return []
+  const { data, error } = await supabase
+    .from("secuencia_inscripciones")
+    .select("*")
+    .eq("vendedor_id", vendedorId)
+    .order("created_at", { ascending: false })
+  return check(data, error).map(mapInscripcion)
+}
+
+// Inscribe un destinatario a una secuencia. El primer envío queda agendado según
+// el "días de espera" del paso 1 (el envío real se activa en la Etapa C).
+export async function inscribir(p: {
+  secuencia_id: string
+  vendedor_id: string
+  lead_id: string | null
+  destinatario_nombre: string
+  destinatario_email: string
+}): Promise<void> {
+  const pasos = await fetchPasos(p.secuencia_id)
+  const dias1 = pasos[0]?.dias_espera ?? 0
+  const proximo = new Date(Date.now() + dias1 * 864e5).toISOString()
+  const { error } = await supabase.from("secuencia_inscripciones").insert({
+    secuencia_id: p.secuencia_id,
+    vendedor_id: p.vendedor_id,
+    lead_id: p.lead_id,
+    destinatario_nombre: p.destinatario_nombre,
+    destinatario_email: p.destinatario_email,
+    estado: "activa",
+    paso_actual: 0,
+    proximo_envio_at: proximo,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function actualizarInscripcion(
+  id: string,
+  estado: InscripcionEstado
+): Promise<void> {
+  const { error } = await supabase.from("secuencia_inscripciones").update({ estado }).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+export async function eliminarInscripcion(id: string): Promise<void> {
+  const { error } = await supabase.from("secuencia_inscripciones").delete().eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
 // ─────────────────────────── Conexión de email (OAuth) ───────────────────────────
 // La casilla que el vendedor conecta para enviar secuencias. El intercambio del
 // código y el guardado del token lo hace la Edge Function `gmail-oauth`
