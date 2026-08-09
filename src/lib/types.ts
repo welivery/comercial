@@ -157,6 +157,41 @@ export interface CreditosLeads {
   usados: number
 }
 
+// ─────────────────────────── Secuencias de email ───────────────────────────
+// Una secuencia = varios mails con tiempos de espera para reactivar/prospectar.
+// vendedor_id null = plantilla compartida del equipo (editable solo por admin).
+export type SecuenciaObjetivo = "reactivacion" | "prospeccion" | "otro"
+export interface Secuencia {
+  id: string
+  vendedor_id: string | null
+  nombre: string
+  objetivo: SecuenciaObjetivo
+  activo: boolean
+  created_at: string
+}
+export interface SecuenciaPaso {
+  id: string
+  secuencia_id: string
+  orden: number
+  dias_espera: number // días desde la inscripción (paso 1) o desde el paso anterior
+  asunto: string
+  cuerpo: string
+  activo: boolean
+}
+export type InscripcionEstado = "activa" | "pausada" | "respondio" | "terminada" | "rebotada"
+export interface SecuenciaInscripcion {
+  id: string
+  secuencia_id: string
+  vendedor_id: string
+  lead_id: string | null
+  destinatario_nombre: string
+  destinatario_email: string
+  estado: InscripcionEstado
+  paso_actual: number
+  proximo_envio_at: string | null
+  created_at: string
+}
+
 // Contexto que alimenta al asistente de leads (editable por el admin).
 export interface FuenteIA {
   key: string

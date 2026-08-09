@@ -8,6 +8,7 @@ import {
   LogOut,
   Moon,
   Search,
+  Send,
   Sparkles,
   Sun,
   Target,
@@ -42,6 +43,7 @@ const NAV_VENDEDOR: NavItem[] = [
   { to: "/avance", label: "Mi avance", icon: <Activity size={17} /> },
   { to: "/pipeline", label: "Oportunidades", icon: <Columns3 size={17} /> },
   { to: "/leads", label: "Buscar leads (IA)", icon: <Search size={17} /> },
+  { to: "/secuencias", label: "Secuencias de email", icon: <Send size={17} /> },
 ]
 
 export function VentasLayout() {

@@ -12,6 +12,7 @@ import { VendedorAvance } from "@/pages/VendedorAvance"
 import { VendedorPipeline } from "@/pages/VendedorPipeline"
 import { OportunidadDetalle } from "@/pages/OportunidadDetalle"
 import { VendedorLeads } from "@/pages/VendedorLeads"
+import { VendedorSecuencias } from "@/pages/VendedorSecuencias"
 
 // Redirige a la pantalla inicial según el modo de vista activo.
 function InicioRedirect() {
@@ -48,6 +49,7 @@ export function VentasApp() {
             <Route path="pipeline" element={<VendedorPipeline />} />
             <Route path="pipeline/:id" element={<OportunidadDetalle />} />
             <Route path="leads" element={<VendedorLeads />} />
+            <Route path="secuencias" element={<VendedorSecuencias />} />
             <Route path="*" element={<InicioRedirect />} />
           </Route>
         </Route>

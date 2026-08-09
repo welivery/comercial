@@ -7,11 +7,14 @@ import {
   fetchContexto,
   fetchCreditosLeads,
   fetchEventos,
+  fetchInscripciones,
   fetchLeads,
   fetchLeadsEquipo,
   fetchObjetivos,
   fetchOportunidad,
   fetchOportunidades,
+  fetchPasos,
+  fetchSecuencias,
   fetchUsuarios,
   fetchVendedores,
 } from "@/data/api"
@@ -67,3 +70,9 @@ export const useCreditosLeads = (vendedorId: string | undefined, periodo: string
     () => (vendedorId ? fetchCreditosLeads(vendedorId, periodo) : Promise.resolve({ limite: 0, usados: 0 })),
     [vendedorId, periodo]
   )
+export const useSecuencias = (vendedorId: string | undefined) =>
+  useAsync(() => (vendedorId ? fetchSecuencias(vendedorId) : Promise.resolve([])), [vendedorId])
+export const usePasos = (secuenciaId: string | undefined) =>
+  useAsync(() => (secuenciaId ? fetchPasos(secuenciaId) : Promise.resolve([])), [secuenciaId])
+export const useInscripciones = (vendedorId: string | undefined) =>
+  useAsync(() => (vendedorId ? fetchInscripciones(vendedorId) : Promise.resolve([])), [vendedorId])
