@@ -10,6 +10,7 @@ import {
   Phone,
   Plus,
   RefreshCw,
+  Send,
   Sparkles,
   Star,
   TrendingUp,
@@ -21,13 +22,13 @@ import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando } from "@/components/widgets"
 import { useVentas } from "@/store"
-import { useCreditosLeads, useLeads, useObjetivos } from "@/hooks/useData"
-import { convertirLead, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
+import { useCreditosLeads, useInscripciones, useLeads, useObjetivos, useSecuencias } from "@/hooks/useData"
+import { convertirLead, inscribir, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
 import { generarLeadsIA } from "@/data/leads"
 import { asignarBucket } from "@/lib/buckets"
 import { MOTIVOS_RECHAZO, MOTIVO_RECHAZO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
 import { cn } from "@/lib/utils"
-import type { FuenteLead, Lead, LeadEstado, MotivoRechazo } from "@/lib/types"
+import type { FuenteLead, Lead, LeadEstado, MotivoRechazo, SecuenciaInscripcion } from "@/lib/types"
 
 const FUENTE_ICON: Record<FuenteLead["tipo"], React.ReactNode> = {
   maps: <MapPin size={13} />,
@@ -75,7 +76,21 @@ export function VendedorLeads() {
   const { data: leadsData, loading, error, reload } = useLeads(vendedor.id)
   const { data: creditos, reload: reloadCred } = useCreditosLeads(vendedor.id, PERIODO_ACTUAL)
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
+  const { data: secuencias } = useSecuencias(vendedor.id)
+  const { data: inscripciones, reload: reloadInsc } = useInscripciones(vendedor.id)
   const leads = useMemo(() => leadsData ?? [], [leadsData])
+
+  // Secuencias activas del vendedor (para el selector del modal).
+  const seqActivas = useMemo(() => (secuencias ?? []).filter((s) => s.activo), [secuencias])
+  // Inscripción vigente por lead (para el chip "En secuencia"). La lista viene
+  // ordenada por fecha desc → nos quedamos con la más reciente de cada lead.
+  const inscByLead = useMemo(() => {
+    const m = new Map<string, SecuenciaInscripcion>()
+    for (const i of inscripciones ?? []) {
+      if (i.lead_id && !m.has(i.lead_id)) m.set(i.lead_id, i)
+    }
+    return m
+  }, [inscripciones])
 
   // Cupo diario configurado en Objetivos para este vendedor.
   const cupoDiario = objetivos?.find((o) => o.vendedor_id === vendedor.id)?.leads_cupo_diario ?? 0
@@ -114,6 +129,13 @@ export function VendedorLeads() {
   const [form, setForm] = useState<OpForm | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
+
+  // Modal "Poner en secuencia".
+  const [seqLead, setSeqLead] = useState<Lead | null>(null)
+  const [seqId, setSeqId] = useState("")
+  const [seqEmail, setSeqEmail] = useState("")
+  const [seqSaving, setSeqSaving] = useState(false)
+  const [seqErr, setSeqErr] = useState<string | null>(null)
 
   const sinVendedor = !vendedor.id
   const vivoRef = useRef(true)
@@ -214,6 +236,45 @@ export function VendedorLeads() {
       reload()
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "No se pudo reactivar")
+    }
+  }
+
+  function abrirSecuencia(l: Lead) {
+    setSeqLead(l)
+    setSeqId(seqActivas[0]?.id ?? "")
+    setSeqEmail(l.email ?? "")
+    setSeqErr(null)
+  }
+
+  async function confirmarSecuencia(e: React.FormEvent) {
+    e.preventDefault()
+    if (!seqLead) return
+    if (!seqId) {
+      setSeqErr("Elegí una secuencia.")
+      return
+    }
+    if (!seqEmail.trim()) {
+      setSeqErr("Falta el email del destinatario.")
+      return
+    }
+    setSeqSaving(true)
+    setSeqErr(null)
+    try {
+      await inscribir({
+        secuencia_id: seqId,
+        vendedor_id: vendedor.id,
+        lead_id: seqLead.id,
+        destinatario_nombre: seqLead.nombre,
+        destinatario_email: seqEmail.trim(),
+      })
+      const nombre = seqLead.nombre
+      setSeqLead(null)
+      reloadInsc()
+      setAviso({ tipo: "ok", texto: `${nombre} quedó en la secuencia. Podés seguirlo en Secuencias de email.` })
+    } catch (err) {
+      setSeqErr(err instanceof Error ? err.message : "No se pudo poner en la secuencia")
+    } finally {
+      setSeqSaving(false)
     }
   }
 
@@ -463,6 +524,23 @@ export function VendedorLeads() {
                             {l.fit}% fit
                           </span>
                         ))}
+                      {(() => {
+                        const insc = inscByLead.get(l.id)
+                        if (!insc) return null
+                        if (insc.estado === "respondio")
+                          return (
+                            <span className="rounded-full bg-[#DFF2E9] px-2 py-0.5 text-[11px] font-semibold text-success">
+                              Respondió 🎯
+                            </span>
+                          )
+                        if (insc.estado === "terminada" || insc.estado === "rebotada") return null
+                        return (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF3FE] px-2 py-0.5 text-[11px] font-semibold text-blue">
+                            <Send size={11} />
+                            {insc.estado === "pausada" ? "Secuencia pausada" : "En secuencia"}
+                          </span>
+                        )
+                      })()}
                     </h4>
                     <p className="mt-1.5 text-[12.5px] leading-relaxed text-slate">{l.motivo}</p>
 
@@ -549,6 +627,17 @@ export function VendedorLeads() {
                         <Button variant="blue" size="sm" onClick={() => abrirConvertir(l)}>
                           <Plus /> Pasar a oportunidad
                         </Button>
+                        {inscByLead.get(l.id) ? (
+                          <Button asChild variant="outline" size="sm">
+                            <Link to="/secuencias">
+                              <Send /> Ver secuencia
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" onClick={() => abrirSecuencia(l)}>
+                            <Send /> Poner en secuencia
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"
@@ -637,6 +726,67 @@ export function VendedorLeads() {
               <Button type="submit" variant="blue" disabled={guardando}>
                 {guardando ? "Creando…" : "Crear oportunidad"}
               </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* Modal: poner en secuencia */}
+      <Modal open={!!seqLead} onClose={() => setSeqLead(null)} title="Poner lead en una secuencia">
+        {seqLead && (
+          <form onSubmit={confirmarSecuencia} className="flex flex-col gap-3.5">
+            {seqActivas.length === 0 ? (
+              <div className="rounded-lg bg-mist/70 px-3 py-3 text-[12.5px] text-slate">
+                Todavía no tenés secuencias activas. Creá una en{" "}
+                <Link to="/secuencias" className="font-medium text-blue underline">
+                  Secuencias de email
+                </Link>{" "}
+                y volvé.
+              </div>
+            ) : (
+              <>
+                <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+                  <b className="text-ink">{seqLead.nombre}</b> va a entrar en la secuencia elegida. Los mails salen
+                  desde tu casilla conectada según los tiempos de cada paso.
+                </p>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-medium text-slate">Secuencia</span>
+                  <select value={seqId} onChange={(e) => setSeqId(e.target.value)} className="inp" required>
+                    {seqActivas.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[12px] font-medium text-slate">Email del destinatario</span>
+                  <input
+                    type="email"
+                    value={seqEmail}
+                    onChange={(e) => setSeqEmail(e.target.value)}
+                    className="inp"
+                    placeholder="contacto@empresa.cl"
+                    required
+                  />
+                  {!seqLead.email && (
+                    <span className="text-[11.5px] text-warning">
+                      Este lead no tenía email cargado. Completalo para poder enviarle.
+                    </span>
+                  )}
+                </label>
+                {seqErr && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{seqErr}</div>}
+              </>
+            )}
+            <div className="mt-1 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setSeqLead(null)}>
+                {seqActivas.length === 0 ? "Cerrar" : "Cancelar"}
+              </Button>
+              {seqActivas.length > 0 && (
+                <Button type="submit" variant="blue" disabled={seqSaving}>
+                  {seqSaving ? "Poniendo…" : "Poner en secuencia"}
+                </Button>
+              )}
             </div>
           </form>
         )}
