@@ -153,7 +153,7 @@ function cli(
   motivo_baja: Cliente["motivo_baja"],
   nota: string
 ): Cliente {
-  return { id: nombre.toLowerCase().replace(/\s+/g, "-"), nombre, iniciales: iniciales(nombre), segmento, envios_mes, bucket, vendedor_id, motivo_baja, nota }
+  return { id: nombre.toLowerCase().replace(/\s+/g, "-"), nombre, iniciales: iniciales(nombre), segmento, envios_mes, bucket, vendedor_id, motivo_baja, contacto: null, email: null, telefono: null, comuna: null, nota }
 }
 
 export const CLIENTES: Cliente[] = [

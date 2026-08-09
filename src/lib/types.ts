@@ -183,6 +183,7 @@ export interface SecuenciaPaso {
   activo: boolean
 }
 export type InscripcionEstado = "activa" | "pausada" | "respondio" | "terminada" | "rebotada"
+export type IaSentimiento = "positivo" | "negativo" | "duda"
 export interface SecuenciaInscripcion {
   id: string
   secuencia_id: string
@@ -193,7 +194,21 @@ export interface SecuenciaInscripcion {
   estado: InscripcionEstado
   paso_actual: number
   proximo_envio_at: string | null
+  ultimo_envio_at: string | null
+  // Clasificación de la respuesta por IA (Etapa C). null = todavía sin respuesta.
+  ia_sentimiento: IaSentimiento | null
+  ia_confianza: number | null
+  ia_resumen: string | null
   created_at: string
+}
+
+// Config de automatización de secuencias (org-wide, en config_ventas).
+export type IaAutonomia = "sugiere" | "auto_claros"
+export interface ConfigSecuencias {
+  envio_activo: boolean // enviar mails automáticamente por cadencia
+  ia_activa: boolean // clasificar respuestas con IA
+  ia_autonomia: IaAutonomia // 'sugiere' = humano confirma; 'auto_claros' = actúa sola si está segura
+  ia_limite_mensual: number // tope de respuestas clasificadas por mes (control de costo)
 }
 
 // Casilla de email conectada por el vendedor (OAuth Google). El refresh_token

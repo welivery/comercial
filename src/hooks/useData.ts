@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react"
 import {
   fetchClientes,
+  fetchConfigSecuencias,
   fetchContexto,
   fetchCreditosLeads,
   fetchEmailCuenta,
@@ -79,3 +80,4 @@ export const useInscripciones = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchInscripciones(vendedorId) : Promise.resolve([])), [vendedorId])
 export const useEmailCuenta = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchEmailCuenta(vendedorId) : Promise.resolve(null)), [vendedorId])
+export const useConfigSecuencias = () => useAsync(() => fetchConfigSecuencias(), [])

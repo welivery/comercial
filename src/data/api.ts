@@ -7,9 +7,11 @@ import { iniciales } from "@/lib/display"
 import type {
   Bucket,
   Cliente,
+  ConfigSecuencias,
   ContextoIA,
   CreditosLeads,
   EmailCuenta,
+  IaAutonomia,
   EstadoOportunidad,
   Lead,
   LeadEstado,
@@ -652,6 +654,10 @@ function mapInscripcion(r: any): SecuenciaInscripcion {
     estado: r.estado as InscripcionEstado,
     paso_actual: r.paso_actual ?? 0,
     proximo_envio_at: r.proximo_envio_at ?? null,
+    ultimo_envio_at: r.ultimo_envio_at ?? null,
+    ia_sentimiento: (r.ia_sentimiento ?? null) as SecuenciaInscripcion["ia_sentimiento"],
+    ia_confianza: r.ia_confianza ?? null,
+    ia_resumen: r.ia_resumen ?? null,
     created_at: r.created_at,
   }
 }
@@ -824,6 +830,35 @@ export async function desconectarEmail(vendedorId: string): Promise<void> {
 export function urlConectarGmail(vendedorId: string): string {
   const base = import.meta.env.VITE_SUPABASE_URL as string | undefined
   return `${base ?? ""}/functions/v1/gmail-oauth?action=start&vid=${encodeURIComponent(vendedorId)}`
+}
+
+// ─────────────── Automatización de secuencias (config org-wide) ───────────────
+export async function fetchConfigSecuencias(): Promise<ConfigSecuencias> {
+  const { data, error } = await supabase
+    .from("config_ventas")
+    .select("secuencias_envio_activo, secuencias_ia_activa, secuencias_ia_autonomia, secuencias_ia_limite_mensual")
+    .eq("id", 1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return {
+    envio_activo: data?.secuencias_envio_activo ?? false,
+    ia_activa: data?.secuencias_ia_activa ?? false,
+    ia_autonomia: (data?.secuencias_ia_autonomia ?? "auto_claros") as IaAutonomia,
+    ia_limite_mensual: data?.secuencias_ia_limite_mensual ?? 200,
+  }
+}
+
+export async function guardarConfigSecuencias(c: ConfigSecuencias): Promise<void> {
+  const { error } = await supabase
+    .from("config_ventas")
+    .update({
+      secuencias_envio_activo: c.envio_activo,
+      secuencias_ia_activa: c.ia_activa,
+      secuencias_ia_autonomia: c.ia_autonomia,
+      secuencias_ia_limite_mensual: c.ia_limite_mensual,
+    })
+    .eq("id", 1)
+  if (error) throw new Error(error.message)
 }
 
 // Ensambla el contexto IA de sus 4 tablas.

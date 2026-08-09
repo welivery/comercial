@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import {
+  Bot,
   Check,
   Copy,
   Info,
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
 import { ConexionEmail } from "@/components/ConexionEmail"
+import { ConfigAutomatizacion } from "@/components/ConfigAutomatizacion"
 import { Cargando, ErrorMsg } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useSecuencias } from "@/hooks/useData"
@@ -62,11 +64,13 @@ const INSC_COLOR: Record<InscripcionEstado, string> = {
   terminada: "#7A869C",
   rebotada: "#DB3B3B",
 }
+const SENT_LABEL: Record<string, string> = { positivo: "Interés", negativo: "No interesado", duda: "Duda" }
+const SENT_COLOR: Record<string, string> = { positivo: "#1E9E6A", negativo: "#DB3B3B", duda: "#E0A52F" }
 
 const PASO_VACIO: PasoInput = { orden: 1, dias_espera: 3, asunto: "", cuerpo: "", activo: true }
 
 export function VendedorSecuencias() {
-  const { vendedor } = useVentas()
+  const { vendedor, rol } = useVentas()
   const { data: secuenciasData, loading, error, reload } = useSecuencias(vendedor.id)
   const { data: inscData, reload: reloadInsc } = useInscripciones(vendedor.id)
   const { data: leadsData } = useLeads(vendedor.id)
@@ -231,14 +235,16 @@ export function VendedorSecuencias() {
         </Button>
       </PageHead>
 
+      {rol === "admin" && <ConfigAutomatizacion />}
+
       <ConexionEmail vendedorId={vendedor.id} />
 
       <div className="mb-4 flex items-start gap-2 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-blue">
         <Info size={16} className="mt-px shrink-0" />
         <span>
-          Acá armás y editás tus secuencias. Conectá tu email arriba para poder enviarlas. El <b>envío automático</b>{" "}
-          (y frenar cuando el cliente responde) se termina de activar en la próxima etapa; por ahora las inscripciones
-          quedan agendadas.
+          Acá armás y editás tus secuencias. Conectá tu email arriba para poder enviarlas. Con el <b>envío automático</b>{" "}
+          prendido (lo configura el admin), los mails salen según los tiempos de cada paso y la secuencia frena cuando el
+          contacto responde. Si no, podés marcar las respuestas a mano acá abajo.
         </span>
       </div>
 
@@ -474,6 +480,17 @@ export function VendedorSecuencias() {
                     <td className="px-4 py-3">
                       <div className="text-[13px] font-medium text-ink">{ins.destinatario_nombre || "—"}</div>
                       <div className="text-[11.5px] text-slate">{ins.destinatario_email}</div>
+                      {ins.ia_sentimiento && (
+                        <div className="mt-1 flex items-start gap-1 text-[11px] text-slate">
+                          <Bot size={12} className="mt-px shrink-0 text-blue" />
+                          <span>
+                            <b style={{ color: SENT_COLOR[ins.ia_sentimiento] }}>
+                              IA: {SENT_LABEL[ins.ia_sentimiento] ?? ins.ia_sentimiento}
+                            </b>
+                            {ins.ia_resumen ? ` · ${ins.ia_resumen}` : ""}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate">{seq?.nombre ?? "—"}</td>
                     <td className="px-4 py-3">
