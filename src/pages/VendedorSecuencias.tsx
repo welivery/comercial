@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
+import { ConexionEmail } from "@/components/ConexionEmail"
 import { Cargando, ErrorMsg } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useSecuencias } from "@/hooks/useData"
@@ -192,12 +193,14 @@ export function VendedorSecuencias() {
         </Button>
       </PageHead>
 
+      <ConexionEmail vendedorId={vendedor.id} />
+
       <div className="mb-4 flex items-start gap-2 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-blue">
         <Info size={16} className="mt-px shrink-0" />
         <span>
-          Acá armás y editás tus secuencias. El <b>envío automático</b> (y frenar cuando el cliente responde) se
-          activa cuando conectes tu email de Welivery — es la próxima etapa. Por ahora las inscripciones quedan
-          agendadas, sin mandar nada.
+          Acá armás y editás tus secuencias. Conectá tu email arriba para poder enviarlas. El <b>envío automático</b>{" "}
+          (y frenar cuando el cliente responde) se termina de activar en la próxima etapa; por ahora las inscripciones
+          quedan agendadas.
         </span>
       </div>
 

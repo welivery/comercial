@@ -6,6 +6,7 @@ import {
   fetchClientes,
   fetchContexto,
   fetchCreditosLeads,
+  fetchEmailCuenta,
   fetchEventos,
   fetchInscripciones,
   fetchLeads,
@@ -76,3 +77,5 @@ export const usePasos = (secuenciaId: string | undefined) =>
   useAsync(() => (secuenciaId ? fetchPasos(secuenciaId) : Promise.resolve([])), [secuenciaId])
 export const useInscripciones = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchInscripciones(vendedorId) : Promise.resolve([])), [vendedorId])
+export const useEmailCuenta = (vendedorId: string | undefined) =>
+  useAsync(() => (vendedorId ? fetchEmailCuenta(vendedorId) : Promise.resolve(null)), [vendedorId])

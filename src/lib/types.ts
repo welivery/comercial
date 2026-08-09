@@ -192,6 +192,15 @@ export interface SecuenciaInscripcion {
   created_at: string
 }
 
+// Casilla de email conectada por el vendedor (OAuth Google). El refresh_token
+// vive solo del lado servidor; el front nunca lo lee.
+export interface EmailCuenta {
+  vendedor_id: string
+  email: string
+  provider: string
+  conectado_at: string
+}
+
 // Contexto que alimenta al asistente de leads (editable por el admin).
 export interface FuenteIA {
   key: string
