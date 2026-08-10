@@ -23,6 +23,8 @@ interface VentasState {
   loading: boolean
   rol: RolVentas
   usuario: VendedorRow | null
+  // Sesión activa pero sin ficha de vendedor vinculada (falta que el admin lo asocie).
+  sinPerfil: boolean
   // Modo de vista (para el admin: previsualizar vistas de vendedor).
   modo: RolVentas
   setModo: (m: RolVentas) => void
@@ -90,15 +92,24 @@ export function VentasProvider({ children }: { children: ReactNode }) {
   const rol: RolVentas = usuario?.rol ?? "vendedor"
 
   const vendedor: Vendedor = useMemo(() => {
-    if (rol === "vendedor" && usuario) return usuario
+    // Vendedor: su propia ficha. Si su usuario NO está vinculado a ninguna ficha
+    // (usuario null), queda FALLBACK (id vacío) — nunca caer a la de otro.
+    if (rol === "vendedor") return usuario ?? FALLBACK
+    // Admin: previsualiza al vendedor elegido (o el primero del equipo).
     return vendedores.find((v) => v.id === verVendedorId) ?? vendedores[0] ?? FALLBACK
   }, [rol, usuario, vendedores, verVendedorId])
+
+  // Sesión activa pero el usuario no quedó enganchado a ninguna ficha de
+  // vendedor (mal linkeo por email / trigger). No puede trabajar hasta que el
+  // admin lo vincule; lo usamos para mostrar un mensaje claro (no el de admin).
+  const sinPerfil = !!session && !loading && !usuario
 
   const value: VentasState = {
     session,
     loading,
     rol,
     usuario,
+    sinPerfil,
     modo: rol === "admin" ? modo : "vendedor",
     setModo,
     vendedor,

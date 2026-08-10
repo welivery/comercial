@@ -98,7 +98,7 @@ interface OpForm {
 }
 
 export function VendedorLeads() {
-  const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId } = useVentas()
+  const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId, sinPerfil } = useVentas()
   const { data: leadsData, loading, error, reload } = useLeads(vendedor.id)
   const { data: creditos, reload: reloadCred } = useCreditosLeads(vendedor.id, PERIODO_ACTUAL)
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
@@ -583,7 +583,16 @@ export function VendedorLeads() {
         </div>
       )}
 
-      {sinVendedor ? (
+      {sinPerfil ? (
+        <Card className="mt-4 p-6 text-center">
+          <p className="text-[14px] font-semibold text-navy">Tu usuario todavía no está vinculado a un vendedor</p>
+          <p className="mx-auto mt-1.5 max-w-[56ch] text-[13px] text-slate">
+            Entraste bien, pero tu cuenta no está asociada a una ficha de vendedor, así que todavía no tenés leads
+            propios. Pedile al administrador que te vincule desde <b>Usuarios</b> (o que verifique que tu ficha tenga
+            el mismo email con el que iniciás sesión). Apenas te asocien, vas a ver tus leads acá.
+          </p>
+        </Card>
+      ) : sinVendedor ? (
         <Card className="mt-4 p-6 text-center">
           <p className="text-[14px] font-semibold text-navy">Elegí o cargá un vendedor</p>
           <p className="mx-auto mt-1.5 max-w-[52ch] text-[13px] text-slate">
