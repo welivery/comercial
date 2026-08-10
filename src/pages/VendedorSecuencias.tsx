@@ -366,6 +366,7 @@ export function VendedorSecuencias() {
         </Button>
       </PageHead>
 
+      <div className="flex flex-col">
       {esAdmin ? (
         <>
           <ConfigAutomatizacion />
@@ -412,21 +413,27 @@ export function VendedorSecuencias() {
           </div>
         </>
       ) : (
-        <>
-          <ConexionEmail vendedorId={vendedor.id} />
-          <div className="mb-4 flex items-start gap-2 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-blue">
-            <Info size={16} className="mt-px shrink-0" />
-            <span>
-              Acá armás y editás tus secuencias (o duplicás una plantilla del equipo). Conectá tu email arriba para
-              poder enviarlas. Con el <b>envío automático</b> prendido (lo configura el admin), los mails salen según los
-              tiempos de cada paso y la secuencia frena cuando el contacto responde. Si no, podés marcar las respuestas a
-              mano acá abajo.
-            </span>
-          </div>
-        </>
+        <ConexionEmail
+          vendedorId={vendedor.id}
+          onEditar={() => document.getElementById("editor-secuencias")?.scrollIntoView({ behavior: "smooth" })}
+        />
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
+      {!esAdmin && (
+        <div id="editor-secuencias" className="order-3 mt-6">
+          <h2 className="text-[15px] font-semibold text-navy">Armar y editar secuencias</h2>
+          <div className="mb-3 mt-1 flex items-start gap-2 rounded-lg bg-mist/60 px-3 py-2 text-[11.5px] leading-relaxed text-slate">
+            <Info size={13} className="mt-px shrink-0 text-blue" />
+            <span>
+              Creá o editá tus cadencias, o duplicá una plantilla del equipo. Si el <b>envío automático</b> está prendido
+              (lo configura el admin), los mails salen solos según los tiempos de cada paso y frenan cuando el contacto
+              responde.
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div className={cn("grid gap-4 lg:grid-cols-[300px_1fr] lg:items-start", !esAdmin && "order-3")}>
         {/* Lista de secuencias */}
         <div className="flex flex-col gap-2">
           {secuencias.length === 0 && (
@@ -642,10 +649,10 @@ export function VendedorSecuencias() {
         )}
       </div>
 
-      {/* Inscripciones (solo vista vendedor: son personales de cada uno) */}
+      {/* Envíos + contactos (vista vendedor). order-2 → antes del editor. */}
       {!esAdmin && (
-      <>
-      <div className="mb-3 mt-7">
+      <div className="order-2">
+      <div className="mb-3">
         <h2 className="mb-2 text-[15px] font-semibold text-navy">Mis envíos</h2>
         <KpiFila k={kpiVend} />
       </div>
@@ -797,8 +804,9 @@ export function VendedorSecuencias() {
           </table>
         </Card>
       )}
-      </>
+      </div>
       )}
+      </div>
 
       {/* Responder desde la app */}
       <Modal open={!!respIns} onClose={() => setRespIns(null)} title="Responder">

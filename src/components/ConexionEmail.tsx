@@ -6,8 +6,8 @@ import { useEmailCuenta } from "@/hooks/useData"
 import { desconectarEmail, urlConectarGmail } from "@/data/api"
 import { cn } from "@/lib/utils"
 
-// Tarjeta para conectar/desconectar la casilla de Gmail del vendedor (Etapa B).
-export function ConexionEmail({ vendedorId }: { vendedorId: string }) {
+// Tarjeta (compacta) para conectar/desconectar la casilla de Gmail del vendedor.
+export function ConexionEmail({ vendedorId, onEditar }: { vendedorId: string; onEditar?: () => void }) {
   const { data: cuenta, loading, reload } = useEmailCuenta(vendedorId)
   const [aviso, setAviso] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null)
 
@@ -37,37 +37,42 @@ export function ConexionEmail({ vendedorId }: { vendedorId: string }) {
   }
 
   return (
-    <Card className="mb-4 flex flex-col gap-3 p-[18px] sm:flex-row sm:items-center">
-      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[#EEF3FE]">
-        <Mail size={20} className="text-blue" />
+    <Card className="mb-4 flex flex-wrap items-center gap-3 px-4 py-2.5">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#EEF3FE]">
+        <Mail size={16} className="text-blue" />
       </span>
       <div className="min-w-0 flex-1">
-        <h2 className="text-[14px] font-semibold text-navy">Tu email para enviar</h2>
         {loading ? (
-          <p className="mt-0.5 text-[12.5px] text-slate">Cargando…</p>
+          <p className="text-[12.5px] text-slate">Cargando tu email…</p>
         ) : cuenta ? (
-          <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-slate">
-            <Check size={14} className="text-success" />
-            Conectado como <b className="font-semibold text-ink">{cuenta.email || "tu casilla"}</b>
+          <p className="flex items-center gap-1.5 text-[12.5px] text-slate">
+            <Check size={14} className="shrink-0 text-success" />
+            Enviás desde <b className="font-semibold text-ink">{cuenta.email || "tu casilla"}</b>
           </p>
         ) : (
-          <p className="mt-0.5 text-[12.5px] text-slate">
-            Conectá tu casilla de Welivery para enviar las secuencias desde tu propio email. Un solo click.
+          <p className="text-[12.5px] text-slate">
+            <b className="text-navy">Conectá tu casilla</b> de Welivery para poder enviar las secuencias.
           </p>
         )}
         {aviso && (
-          <p className={cn("mt-1.5 text-[12px] font-medium", aviso.tipo === "ok" ? "text-success" : "text-error")}>
+          <p className={cn("mt-0.5 text-[12px] font-medium", aviso.tipo === "ok" ? "text-success" : "text-error")}>
             {aviso.texto}
           </p>
         )}
       </div>
+      {onEditar && (
+        <Button variant="outline" size="sm" className="shrink-0" onClick={onEditar}>
+          Editar secuencias
+        </Button>
+      )}
       {cuenta ? (
-        <Button variant="outline" className="shrink-0" onClick={desconectar}>
+        <Button variant="outline" size="sm" className="shrink-0" onClick={desconectar}>
           <Unlink /> Desconectar
         </Button>
       ) : (
         <Button
           variant="blue"
+          size="sm"
           className="shrink-0"
           disabled={!vendedorId}
           onClick={() => {
