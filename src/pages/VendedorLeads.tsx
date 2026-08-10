@@ -124,12 +124,19 @@ export function VendedorLeads() {
 
   const [estadoFiltro, setEstadoFiltro] = useState<LeadEstado | "todos">("nuevo")
   const [periodo, setPeriodo] = useState("todo")
+  const [secFiltro, setSecFiltro] = useState<"todos" | "en_sec" | "sin_sec">("todos")
+
+  // Un lead está "en secuencia" si tiene una inscripción viva (no terminada/rebotada).
+  const enSecuencia = (id: string) => {
+    const i = inscByLead.get(id)
+    return !!i && i.estado !== "terminada" && i.estado !== "rebotada"
+  }
 
   // Selección múltiple (para inscribir en lote / reasignar).
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [asignarA, setAsignarA] = useState("")
   const [asignando, setAsignando] = useState(false)
-  useEffect(() => setSel(new Set()), [estadoFiltro, periodo])
+  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro])
 
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
@@ -168,12 +175,13 @@ export function VendedorLeads() {
     const rech = enRango.filter((l) => l.estado === "rechazado").length
     const lista = enRango
       .filter((l) => estadoFiltro === "todos" || l.estado === estadoFiltro)
+      .filter((l) => secFiltro === "todos" || (secFiltro === "en_sec" ? enSecuencia(l.id) : !enSecuencia(l.id)))
       .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
     return {
       kpi: { traidos: enRango.length, nuevos, conv, rech, pct: enRango.length ? Math.round((conv / enRango.length) * 100) : 0 },
       visibles: lista,
     }
-  }, [leads, periodo, estadoFiltro])
+  }, [leads, periodo, estadoFiltro, secFiltro, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Solo los "nuevo" son seleccionables (son los que se pueden inscribir).
   const seleccionables = useMemo(() => visibles.filter((l) => l.estado === "nuevo"), [visibles])
@@ -574,9 +582,18 @@ export function VendedorLeads() {
               ))}
             </div>
             <select
+              value={secFiltro}
+              onChange={(ev) => setSecFiltro(ev.target.value as typeof secFiltro)}
+              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+            >
+              <option value="todos">Secuencia: todos</option>
+              <option value="en_sec">En secuencia</option>
+              <option value="sin_sec">Sin secuencia</option>
+            </select>
+            <select
               value={periodo}
               onChange={(ev) => setPeriodo(ev.target.value)}
-              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+              className="rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
             >
               {PERIODOS.map((p) => (
                 <option key={p.k} value={p.k}>
