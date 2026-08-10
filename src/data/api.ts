@@ -705,6 +705,55 @@ export async function convertirLead(
   return opId
 }
 
+// Pasa un contacto de secuencia a oportunidad (desde "Contactos en secuencia").
+// Sirve tenga o no un lead atrás. Crea la oportunidad en la etapa elegida
+// (interesado o reunión coordinada), linkea el lead si existe y cierra la
+// inscripción (ya no está en la cadencia).
+export async function pasarContactoAOportunidad(p: {
+  inscripcion_id: string
+  lead_id: string | null
+  vendedor_id: string
+  empresa: string
+  interes: string | null
+  envios_aprox: number
+  marca_reconocida: boolean
+  quiere_fulfillment: boolean
+  estado: "interesado" | "reunion_coordinada"
+}): Promise<string> {
+  const bucket = asignarBucket({
+    marca_reconocida: p.marca_reconocida,
+    envios_aprox: p.envios_aprox,
+    quiere_fulfillment: p.quiere_fulfillment,
+  })
+  const now = new Date().toISOString()
+  const row: Record<string, unknown> = {
+    vendedor_id: p.vendedor_id,
+    ecommerce: p.empresa,
+    sitio: null,
+    envios_aprox: p.envios_aprox,
+    lugar_retiro: "",
+    tipo_producto: "",
+    interes: p.interes,
+    marca_reconocida: p.marca_reconocida,
+    quiere_fulfillment: p.quiere_fulfillment,
+    origen: "ia",
+    bucket,
+    estado: p.estado,
+  }
+  if (p.estado === "reunion_coordinada") row.reunion_coordinada_at = now
+  const { data, error } = await supabase.from("oportunidades").insert(row).select("id").single()
+  if (error) throw new Error(error.message)
+  const opId = (data as { id: string }).id
+  if (p.lead_id) {
+    await supabase
+      .from("leads")
+      .update({ estado: "convertido", oportunidad_id: opId, updated_at: now })
+      .eq("id", p.lead_id)
+  }
+  await supabase.from("secuencia_inscripciones").update({ estado: "terminada" }).eq("id", p.inscripcion_id)
+  return opId
+}
+
 export async function fetchCreditosLeads(vendedorId: string, periodo: string): Promise<CreditosLeads> {
   if (!vendedorId) return { limite: 0, usados: 0 }
   const [cfg, uso] = await Promise.all([

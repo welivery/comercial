@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Link } from "react-router-dom"
+import { useNavigate } from "react-router-dom"
 import {
   Bot,
   Check,
@@ -38,6 +38,7 @@ import {
   guardarPasos,
   enviarAhoraInscripcion,
   inscribir,
+  pasarContactoAOportunidad,
   rechazarLead,
   responderInscripcion,
   type PasoInput,
@@ -175,6 +176,19 @@ export function VendedorSecuencias() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewConNombre, setPreviewConNombre] = useState(true)
 
+  const navigate = useNavigate()
+
+  // Pasar contacto a oportunidad.
+  const [oppIns, setOppIns] = useState<SecuenciaInscripcion | null>(null)
+  const [oppEmpresa, setOppEmpresa] = useState("")
+  const [oppEstado, setOppEstado] = useState<"interesado" | "reunion_coordinada">("interesado")
+  const [oppEnvios, setOppEnvios] = useState(0)
+  const [oppInteres, setOppInteres] = useState("")
+  const [oppMarca, setOppMarca] = useState(false)
+  const [oppFull, setOppFull] = useState(false)
+  const [oppSaving, setOppSaving] = useState(false)
+  const [oppErr, setOppErr] = useState<string | null>(null)
+
   // Responder desde la app.
   const [respIns, setRespIns] = useState<SecuenciaInscripcion | null>(null)
   const [respTexto, setRespTexto] = useState("")
@@ -287,9 +301,6 @@ export function VendedorSecuencias() {
     const rank = (e: InscripcionEstado) => (e === "respondio" ? 0 : e === "activa" ? 1 : e === "pausada" ? 2 : 3)
     return [...inscripciones].sort((a, b) => rank(a.estado) - rank(b.estado))
   }, [inscripciones])
-  // Un lead solo se puede pasar a oportunidad si sigue "nuevo".
-  const leadConvertible = (id: string | null) => !!id && leads.some((l) => l.id === id && l.estado === "nuevo")
-
   async function noInteresado(ins: SecuenciaInscripcion) {
     if (
       !window.confirm(
@@ -318,6 +329,43 @@ export function VendedorSecuencias() {
       window.alert(e instanceof Error ? e.message : "No se pudo enviar")
     } finally {
       setEnviando(null)
+    }
+  }
+
+  function abrirOportunidad(ins: SecuenciaInscripcion) {
+    setOppIns(ins)
+    setOppEmpresa(ins.destinatario_empresa || ins.destinatario_nombre || "")
+    setOppEstado("interesado")
+    setOppEnvios(0)
+    setOppInteres(ins.ia_resumen || (ins.respuesta_texto ?? "").slice(0, 160))
+    setOppMarca(false)
+    setOppFull(false)
+    setOppErr(null)
+  }
+  async function crearOportunidad(e: React.FormEvent) {
+    e.preventDefault()
+    if (!oppIns || !oppEmpresa.trim()) return
+    setOppSaving(true)
+    setOppErr(null)
+    try {
+      const opId = await pasarContactoAOportunidad({
+        inscripcion_id: oppIns.id,
+        lead_id: oppIns.lead_id,
+        vendedor_id: vendedor.id,
+        empresa: oppEmpresa.trim(),
+        interes: oppInteres.trim() || null,
+        envios_aprox: oppEnvios,
+        marca_reconocida: oppMarca,
+        quiere_fulfillment: oppFull,
+        estado: oppEstado,
+      })
+      setOppIns(null)
+      reloadInsc()
+      navigate(`/pipeline/${opId}`)
+    } catch (err) {
+      setOppErr(err instanceof Error ? err.message : "No se pudo crear la oportunidad")
+    } finally {
+      setOppSaving(false)
     }
   }
 
@@ -739,13 +787,9 @@ export function VendedorSecuencias() {
                             <Button size="sm" variant="outline" className="text-blue" onClick={() => abrirResponder(ins)}>
                               <Reply /> Responder
                             </Button>
-                            {leadConvertible(ins.lead_id) && (
-                              <Button asChild size="sm" variant="blue">
-                                <Link to={`/leads?convertir=${ins.lead_id}`}>
-                                  <Plus /> Oportunidad
-                                </Link>
-                              </Button>
-                            )}
+                            <Button size="sm" variant="blue" onClick={() => abrirOportunidad(ins)}>
+                              <Plus /> Oportunidad
+                            </Button>
                             <button
                               onClick={() => noInteresado(ins)}
                               title="No sirvió — corta la secuencia y rechaza el lead"
@@ -807,6 +851,76 @@ export function VendedorSecuencias() {
       </div>
       )}
       </div>
+
+      {/* Pasar contacto a oportunidad */}
+      <Modal open={!!oppIns} onClose={() => setOppIns(null)} title="Pasar a oportunidad">
+        {oppIns && (
+          <form onSubmit={crearOportunidad} className="flex flex-col gap-3.5">
+            <div className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+              Crea la oportunidad en el pipeline y saca al contacto de la secuencia. Después completás el resto de los
+              datos en la oportunidad.
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Empresa</span>
+              <input value={oppEmpresa} onChange={(e) => setOppEmpresa(e.target.value)} className="inp" required />
+            </label>
+            <div>
+              <span className="text-[12px] font-medium text-slate">Etapa inicial</span>
+              <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => setOppEstado("interesado")}
+                  className={cn(
+                    "flex-1 rounded-lg border p-2.5 text-left text-[12.5px]",
+                    oppEstado === "interesado" ? "border-blue bg-white ring-1 ring-blue" : "border-input bg-white hover:bg-mist/60"
+                  )}
+                >
+                  <b className="text-ink">Interesado</b>
+                  <div className="text-[11.5px] text-slate">Mostró interés; todavía sin reunión.</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOppEstado("reunion_coordinada")}
+                  className={cn(
+                    "flex-1 rounded-lg border p-2.5 text-left text-[12.5px]",
+                    oppEstado === "reunion_coordinada" ? "border-blue bg-white ring-1 ring-blue" : "border-input bg-white hover:bg-mist/60"
+                  )}
+                >
+                  <b className="text-ink">Reunión coordinada</b>
+                  <div className="text-[11.5px] text-slate">Ya aceptó una reunión.</div>
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-medium text-slate">Envíos aprox./mes</span>
+                <input type="number" min={0} value={oppEnvios} onChange={(e) => setOppEnvios(Number(e.target.value))} className="inp" />
+              </label>
+              <div className="flex flex-col justify-center gap-1.5 pt-4">
+                <label className="flex items-center gap-2 text-[12.5px] text-ink">
+                  <input type="checkbox" checked={oppMarca} onChange={(e) => setOppMarca(e.target.checked)} /> Marca reconocida
+                </label>
+                <label className="flex items-center gap-2 text-[12.5px] text-ink">
+                  <input type="checkbox" checked={oppFull} onChange={(e) => setOppFull(e.target.checked)} /> Quiere fulfillment
+                </label>
+              </div>
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Qué busca (opcional)</span>
+              <textarea value={oppInteres} onChange={(e) => setOppInteres(e.target.value)} className="inp min-h-[60px] resize-y" />
+            </label>
+            {oppErr && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{oppErr}</div>}
+            <div className="mt-1 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setOppIns(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="blue" disabled={oppSaving}>
+                {oppSaving ? "Creando…" : "Crear oportunidad"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Responder desde la app */}
       <Modal open={!!respIns} onClose={() => setRespIns(null)} title="Responder">
