@@ -117,6 +117,8 @@ function mapCliente(r: any): Cliente {
     email: r.email ?? null,
     telefono: r.telefono ?? null,
     comuna: r.comuna ?? null,
+    deuda: r.deuda ?? false,
+    deuda_nota: r.deuda_nota ?? null,
     nota: r.nota ?? "",
   }
 }
@@ -374,6 +376,7 @@ export interface ClienteInput {
   email: string | null
   telefono: string | null
   comuna: string | null
+  deuda?: boolean
   nota: string
 }
 
@@ -389,6 +392,70 @@ export async function eliminarCliente(id: string): Promise<void> {
   const { error } = await supabase.from("clientes").delete().eq("id", id)
   if (error) throw new Error(error.message)
 }
+// ─────────────────────── Importación de deudores ───────────────────────
+// Lista de clientes con deuda / problema de pago. Los que matchean en la base
+// (por nombre normalizado o email) se MARCAN (fuera de prospección) o se
+// ELIMINAN, según la acción. Además se sacan sus leads todavía sin clasificar.
+export interface DeudorInput {
+  nombre: string
+  email: string | null
+  nota: string | null
+}
+
+export async function importarDeudores(
+  rows: DeudorInput[],
+  accion: "marcar" | "eliminar"
+): Promise<{ afectados: number; noEnBase: number; leadsSacados: number }> {
+  const { data: cls, error } = await supabase.from("clientes").select("id, nombre, email")
+  if (error) throw new Error(error.message)
+  const porClave = new Map<string, { id: string; nombre: string }>()
+  const porEmail = new Map<string, { id: string; nombre: string }>()
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  for (const c of (cls ?? []) as any[]) {
+    porClave.set(claveLead(c.nombre), { id: c.id, nombre: c.nombre })
+    if (c.email) porEmail.set(String(c.email).toLowerCase().trim(), { id: c.id, nombre: c.nombre })
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+
+  const ids = new Set<string>()
+  const claves = new Set<string>()
+  const notaPorId = new Map<string, string>()
+  let noEnBase = 0
+  for (const r of rows) {
+    const match = porClave.get(claveLead(r.nombre)) ?? (r.email ? porEmail.get(r.email.toLowerCase().trim()) : undefined)
+    if (!match) {
+      noEnBase++
+      continue
+    }
+    ids.add(match.id)
+    claves.add(claveLead(match.nombre))
+    if (r.nota) notaPorId.set(match.id, r.nota)
+  }
+
+  const idList = [...ids]
+  if (idList.length) {
+    if (accion === "eliminar") {
+      const { error: e } = await supabase.from("clientes").delete().in("id", idList)
+      if (e) throw new Error(e.message)
+    } else {
+      const { error: e } = await supabase.from("clientes").update({ deuda: true }).in("id", idList)
+      if (e) throw new Error(e.message)
+      for (const [id, nota] of notaPorId) {
+        await supabase.from("clientes").update({ deuda_nota: nota }).eq("id", id)
+      }
+    }
+  }
+
+  // Sacar de las listas de leads los que todavía no se clasificaron.
+  let leadsSacados = 0
+  const claveList = [...claves]
+  if (claveList.length) {
+    const { data: del } = await supabase.from("leads").delete().eq("estado", "nuevo").in("clave", claveList).select("id")
+    leadsSacados = del?.length ?? 0
+  }
+  return { afectados: idList.length, noEnBase, leadsSacados }
+}
+
 // Alta en masa (importación CSV). Inserta en lotes para no exceder límites.
 export async function crearClientesBulk(rows: ClienteInput[]): Promise<number> {
   let insertados = 0
@@ -497,6 +564,7 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
       .from("clientes")
       .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id, contacto, email, telefono, comuna")
       .in("segmento", ["ex_cliente", "prospeccion"])
+      .eq("deuda", false) // los deudores no se prospectan automáticamente
       .or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
       .order("envios_mes", { ascending: false }),
     supabase.from("leads").select("clave").eq("vendedor_id", vendedorId),

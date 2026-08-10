@@ -111,6 +111,8 @@ export interface Cliente {
   email: string | null
   telefono: string | null
   comuna: string | null
+  deuda: boolean // true = deuda / problema de pago → fuera de prospección automática
+  deuda_nota: string | null
   nota: string
 }
 

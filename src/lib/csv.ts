@@ -102,6 +102,39 @@ export interface ParseResult {
   totalLineas: number
 }
 
+// Parser simple para la lista de deudores: acepta una columna de nombre (o
+// 'empresa'), y opcionalmente 'email' y 'nota'/'motivo'. También funciona con
+// una lista pelada (un nombre por línea, sin encabezado).
+export interface DeudorRow {
+  nombre: string
+  email: string | null
+  nota: string | null
+}
+export function parseDeudoresCsv(text: string): { rows: DeudorRow[]; totalLineas: number } {
+  const grid = parseCsv(text)
+  if (grid.length === 0) return { rows: [], totalLineas: 0 }
+  const header = grid[0].map((h) => h.trim().toLowerCase().replace(/[-\s]/g, "_"))
+  const conHeader = header.some((h) => ["nombre", "empresa", "email", "correo", "nota", "motivo", "razon"].includes(h))
+  const idx = (name: string) => header.indexOf(name)
+  const iNombre = conHeader ? (idx("nombre") >= 0 ? idx("nombre") : idx("empresa") >= 0 ? idx("empresa") : 0) : 0
+  const iEmail = conHeader ? (idx("email") >= 0 ? idx("email") : idx("correo")) : -1
+  const iNota = conHeader ? (idx("nota") >= 0 ? idx("nota") : idx("motivo") >= 0 ? idx("motivo") : idx("razon")) : -1
+  const start = conHeader ? 1 : 0
+
+  const rows: DeudorRow[] = []
+  for (let r = start; r < grid.length; r++) {
+    const cols = grid[r]
+    const nombre = (cols[iNombre] ?? "").trim()
+    if (!nombre) continue
+    rows.push({
+      nombre,
+      email: iEmail >= 0 ? (cols[iEmail] ?? "").trim() || null : null,
+      nota: iNota >= 0 ? (cols[iNota] ?? "").trim() || null : null,
+    })
+  }
+  return { rows, totalLineas: grid.length - start }
+}
+
 export function parseClientesCsv(
   text: string,
   vendedores: { id: string; nombre: string; email: string }[]

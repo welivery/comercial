@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
+import { AlertTriangle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
@@ -11,9 +11,10 @@ import {
   crearCliente,
   crearClientesBulk,
   eliminarCliente,
+  importarDeudores,
   type ClienteInput,
 } from "@/data/api"
-import { CSV_PLANTILLA, parseClientesCsv, type ParseResult } from "@/lib/csv"
+import { CSV_PLANTILLA, parseClientesCsv, parseDeudoresCsv, type DeudorRow, type ParseResult } from "@/lib/csv"
 import { segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, iniciales } from "@/lib/display"
 import { cn } from "@/lib/utils"
@@ -29,7 +30,7 @@ const MOTIVO_COLOR: Record<MotivoBaja, string> = {
 const SEGMENTOS: SegmentoCliente[] = ["activo", "ex_cliente", "prospeccion"]
 const MOTIVOS: MotivoBaja[] = ["precio", "servicio", "cerro", "deuda", "otro"]
 
-type Filtro = "todos" | SegmentoCliente
+type Filtro = "todos" | SegmentoCliente | "deuda"
 
 const VACIO: ClienteInput = {
   nombre: "",
@@ -42,6 +43,7 @@ const VACIO: ClienteInput = {
   email: null,
   telefono: null,
   comuna: null,
+  deuda: false,
   nota: "",
 }
 
@@ -66,6 +68,54 @@ export function AdminClientes() {
   const [impNombre, setImpNombre] = useState("")
   const [importando, setImportando] = useState(false)
   const [impMsg, setImpMsg] = useState<string | null>(null)
+
+  // Importación de deudores
+  const [deuOpen, setDeuOpen] = useState(false)
+  const [deuRows, setDeuRows] = useState<DeudorRow[]>([])
+  const [deuAccion, setDeuAccion] = useState<"marcar" | "eliminar">("marcar")
+  const [deuProc, setDeuProc] = useState(false)
+  const [deuMsg, setDeuMsg] = useState<string | null>(null)
+
+  function abrirDeudores() {
+    setDeuRows([])
+    setDeuAccion("marcar")
+    setDeuMsg(null)
+    setDeuOpen(true)
+  }
+  function analizarDeudores(texto: string) {
+    setDeuMsg(null)
+    setDeuRows(parseDeudoresCsv(texto).rows)
+  }
+  function onArchivoDeudores(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    const reader = new FileReader()
+    reader.onload = () => analizarDeudores(String(reader.result ?? ""))
+    reader.readAsText(f)
+  }
+  async function procesarDeudores() {
+    if (!deuRows.length) return
+    setDeuProc(true)
+    setDeuMsg(null)
+    try {
+      const r = await importarDeudores(
+        deuRows.map((d) => ({ nombre: d.nombre, email: d.email, nota: d.nota })),
+        deuAccion
+      )
+      setDeuOpen(false)
+      reload()
+      const verbo = deuAccion === "eliminar" ? "eliminados" : "marcados con deuda"
+      window.alert(
+        `${r.afectados} clientes ${verbo}.` +
+          (r.leadsSacados ? ` ${r.leadsSacados} leads sin clasificar se sacaron de las listas.` : "") +
+          (r.noEnBase ? ` ${r.noEnBase} no estaban en la base (se ignoraron).` : "")
+      )
+    } catch (err) {
+      setDeuMsg(err instanceof Error ? err.message : "No se pudo procesar")
+    } finally {
+      setDeuProc(false)
+    }
+  }
 
   function abrirImport() {
     setImpResult(null)
@@ -113,11 +163,20 @@ export function AdminClientes() {
 
   const counts = useMemo(() => {
     const c = { activo: 0, ex_cliente: 0, prospeccion: 0 } as Record<SegmentoCliente, number>
-    for (const cl of CLIENTES) c[cl.segmento]++
-    return c
+    let deuda = 0
+    for (const cl of CLIENTES) {
+      c[cl.segmento]++
+      if (cl.deuda) deuda++
+    }
+    return { ...c, deuda }
   }, [CLIENTES])
 
-  const filtrados = filtro === "todos" ? CLIENTES : CLIENTES.filter((c) => c.segmento === filtro)
+  const filtrados =
+    filtro === "todos"
+      ? CLIENTES
+      : filtro === "deuda"
+        ? CLIENTES.filter((c) => c.deuda)
+        : CLIENTES.filter((c) => c.segmento === filtro)
   const nombreVendedor = (id: string | null) => vends.find((v) => v.id === id)?.nombre.split(" ")[0]
 
   const chips: { key: Filtro; label: string; n: number; dot?: string }[] = [
@@ -125,6 +184,7 @@ export function AdminClientes() {
     { key: "activo", label: "Activos", n: counts.activo, dot: "#1E9E6A" },
     { key: "ex_cliente", label: "Ex-clientes", n: counts.ex_cliente, dot: "#F2563A" },
     { key: "prospeccion", label: "Prospección", n: counts.prospeccion, dot: "#2F5BE6" },
+    { key: "deuda", label: "Con deuda", n: counts.deuda, dot: "#DB3B3B" },
   ]
 
   function abrirNuevo() {
@@ -146,6 +206,7 @@ export function AdminClientes() {
       email: c.email,
       telefono: c.telefono,
       comuna: c.comuna,
+      deuda: c.deuda,
       nota: c.nota,
     })
     setErrForm(null)
@@ -184,6 +245,9 @@ export function AdminClientes() {
   return (
     <>
       <PageHead titulo="Base de clientes" descripcion="Clientes, bajas y prospección · alimenta al asistente de leads">
+        <Button variant="outline" onClick={abrirDeudores}>
+          <AlertTriangle /> Importar deudores
+        </Button>
         <Button variant="outline" onClick={abrirImport}>
           <Upload /> Importar CSV
         </Button>
@@ -261,6 +325,14 @@ export function AdminClientes() {
                       {iniciales(c.nombre)}
                     </span>
                     <span className="text-[13px] font-medium text-ink">{c.nombre}</span>
+                    {c.deuda && (
+                      <span
+                        title={c.deuda_nota ?? "Deuda / problema de pago"}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#FBE2E2] px-2 py-0.5 text-[10.5px] font-semibold text-error"
+                      >
+                        <AlertTriangle size={11} /> Deuda
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3">
@@ -463,6 +535,16 @@ export function AdminClientes() {
               placeholder="Contexto útil (ej: desde 2024, muy conforme)"
             />
           </Campo>
+          <label className="flex items-center gap-2 rounded-lg bg-mist/70 px-3 py-2.5 text-[12.5px] text-ink">
+            <input
+              type="checkbox"
+              checked={!!form.deuda}
+              onChange={(e) => setForm({ ...form, deuda: e.target.checked })}
+            />
+            <AlertTriangle size={14} className="text-error" />
+            Deuda / problema de pago
+            <span className="text-[11.5px] text-slate">— queda fuera de la prospección automática</span>
+          </label>
 
           {errForm && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{errForm}</div>}
 
@@ -545,6 +627,61 @@ export function AdminClientes() {
             </Button>
             <Button variant="blue" disabled={importando || !impResult?.rows.length} onClick={importar}>
               {importando ? "Importando…" : `Importar ${impResult?.rows.length ?? 0}`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: importar deudores */}
+      <Modal open={deuOpen} onClose={() => setDeuOpen(false)} title="Importar clientes con deuda / problema de pago">
+        <div className="flex flex-col gap-3.5">
+          <div className="rounded-lg bg-[#FCF3E2] px-3 py-2.5 text-[12.5px] leading-relaxed text-[#8a6416]">
+            Pegá o subí la lista (una empresa por línea, o CSV con <code>nombre</code> + opcional{" "}
+            <code>email</code> / <code>nota</code>). Se cruzan con tu base por nombre o email.
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Archivo .csv (opcional)</span>
+            <input type="file" accept=".csv,text/csv,.txt" onChange={onArchivoDeudores} className="text-[13px] text-slate" />
+          </label>
+          <div className="text-center text-[11px] text-muted">— o pegá acá —</div>
+          <textarea
+            rows={5}
+            onChange={(e) => analizarDeudores(e.target.value)}
+            className="inp font-mono text-[12px]"
+            placeholder={"Halosur\nCarrito de paseo\n…"}
+          />
+
+          <div className="flex flex-col gap-2">
+            <span className="text-[12px] font-medium text-slate">¿Qué hago con los que matcheen?</span>
+            <label className="flex items-start gap-2 rounded-lg border border-input p-2.5 text-[12.5px]">
+              <input type="radio" checked={deuAccion === "marcar"} onChange={() => setDeuAccion("marcar")} className="mt-0.5" />
+              <span>
+                <b className="text-ink">Marcar con deuda</b> — quedan en la base con chip rojo, fuera de la prospección
+                automática, pero los podés contactar a mano.
+              </span>
+            </label>
+            <label className="flex items-start gap-2 rounded-lg border border-input p-2.5 text-[12.5px]">
+              <input type="radio" checked={deuAccion === "eliminar"} onChange={() => setDeuAccion("eliminar")} className="mt-0.5" />
+              <span>
+                <b className="text-ink">Eliminar de la base</b> — los borra directamente.
+              </span>
+            </label>
+          </div>
+
+          {deuRows.length > 0 && (
+            <div className="rounded-lg border border-border p-3 text-[12.5px] font-medium text-ink">
+              {deuRows.length} en la lista para procesar
+            </div>
+          )}
+          {deuMsg && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{deuMsg}</div>}
+
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setDeuOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="blue" disabled={deuProc || !deuRows.length} onClick={procesarDeudores}>
+              {deuProc ? "Procesando…" : deuAccion === "eliminar" ? `Eliminar (${deuRows.length})` : `Marcar (${deuRows.length})`}
             </Button>
           </div>
         </div>

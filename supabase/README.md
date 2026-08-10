@@ -60,6 +60,7 @@ Correr en este orden si todavía no se corrieron:
 6. `secuencias-auto.sql` — config de automatización + estado IA por inscripción.
 7. `secuencias-vars.sql` — persona de contacto en el lead + empresa en la inscripción.
 8. `secuencias-limites.sql` — tope diario por casilla + espaciado entre mails.
+9. `clientes-deuda.sql` — marca de deuda / problema de pago en la base.
 
 ## Secuencias de email — envío y respuestas (Etapas B y C)
 
