@@ -263,6 +263,17 @@ Reglas de negocio:
 
   const fuentesTxt = fuentes.length ? fuentes.join(", ") : "Google, Google Maps, sitios web, Instagram, directorios de e-commerce chileno"
 
+  // Rotación de rubros: cada búsqueda enfoca una mezcla distinta para no repetir
+  // siempre los mismos e-commerces conocidos y agotar menos el pool.
+  const RUBROS = [
+    "moda y ropa", "calzado", "belleza y cosmética", "deco y hogar", "muebles",
+    "alimentos y gourmet", "mascotas", "deportes y outdoor", "electrónica y accesorios",
+    "juguetería", "librería y papelería", "ferretería y herramientas", "vinos y bebidas",
+    "productos naturales y suplementos", "bijou y accesorios", "bebés y maternidad",
+    "arte y manualidades", "tecnología y gaming", "marroquinería", "plantas y jardín",
+  ]
+  const focoRubros = [...RUBROS].sort(() => Math.random() - 0.5).slice(0, 4).join(", ")
+
   const userMsg = `# Vendedor
 ${vend.nombre}${vend.zona ? ` · zona ${vend.zona}` : ""}
 ${ctxVend?.foco ? `Foco: ${ctxVend.foco}` : ""}
@@ -300,7 +311,13 @@ ${pipelineTxt}
 ${nombresPropios.length ? nombresPropios.map((n) => `- ${n}`).join("\n") : "(ninguna todavía)"}
 
 # Tarea
-Buscá en la web 4 a 6 e-commerces chilenos REALES y NUEVOS para prospectar, priorizando el bucket que le falta al vendedor. Para cada uno confirmá que existe y sacá datos de contacto reales de sus fuentes (sitio y, si figuran, teléfono/email). No repitas ninguna de las empresas listadas arriba ni sus clientes activos.
+Buscá en la web **8 a 12** e-commerces chilenos REALES y NUEVOS para prospectar, priorizando el bucket que le falta al vendedor. Para cada uno confirmá que existe y sacá datos de contacto reales de sus fuentes (sitio y, si figuran, teléfono/email). No repitas ninguna de las empresas listadas arriba ni sus clientes activos.
+
+IMPORTANTE para traer variedad (no vengas siempre con las mismas):
+- Enfocá ESTA búsqueda en rubros como: ${focoRubros}. Podés sumar otros, pero cubrí varios rubros distintos.
+- Evitá los e-commerces más famosos y obvios (los grandes ya están todos tomados). Priorizá tiendas **medianas, de nicho o emergentes** que probablemente NO estén en ninguna lista.
+- Variá las búsquedas: probá directorios, Instagram de tiendas, "tienda online [rubro] chile", marcas que venden por Shopify/Jumpseller/WooCommerce, etc.
+- Es mejor traer 8-12 aunque algunas sean chicas, que traer 2-3 obvias.
 
 # Formato de salida
 Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json que contenga exactamente este objeto (sin texto después):
@@ -337,10 +354,10 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
         // dispara el consumo de tokens. Alcanza para traer empresas reales +
         // sitio; el resto de datos se completa entrando al sitio a mano.
         model: "claude-haiku-4-5",
-        max_tokens: 4000,
+        max_tokens: 6000,
         stream: true,
         tools: [
-          { type: "web_search_20250305", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "CL" } },
+          { type: "web_search_20250305", name: "web_search", max_uses: 5, user_location: { type: "approximate", country: "CL" } },
         ],
         system,
         messages: [{ role: "user", content: userMsg }],
