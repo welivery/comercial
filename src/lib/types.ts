@@ -155,6 +155,8 @@ export interface Lead {
   estado: LeadEstado
   motivo_rechazo: MotivoRechazo | null
   rechazo_nota: string | null // comentario libre al rechazar (historial)
+  contactos_intentos: number // veces que se lo contactó sin respuesta (reintentos)
+  ultimo_contacto_at: string | null // fecha del último intento de contacto
   oportunidad_id: string | null
   created_at: string
 }

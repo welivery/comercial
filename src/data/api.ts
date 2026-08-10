@@ -506,6 +506,8 @@ function mapLead(r: any): Lead {
     estado: r.estado,
     motivo_rechazo: (r.motivo_rechazo ?? null) as MotivoRechazo | null,
     rechazo_nota: r.rechazo_nota ?? null,
+    contactos_intentos: r.contactos_intentos ?? 0,
+    ultimo_contacto_at: r.ultimo_contacto_at ?? null,
     oportunidad_id: r.oportunidad_id ?? null,
     created_at: r.created_at,
   }
@@ -667,6 +669,29 @@ export async function asignarLeads(
     if (updErr) throw new Error(updErr.message)
   }
   return { movidos: mover.length, omitidos: ids.length - mover.length }
+}
+
+// Registra un intento de contacto sin respuesta (llamada / WhatsApp / mail
+// directo). Suma 1 al contador y sella la fecha. El lead sigue "nuevo" (sin
+// clasificar) para poder reintentar más tarde y, al final, pasarlo a
+// oportunidad o rechazarlo. Devuelve la cantidad de intentos ya registrados.
+export async function marcarContactado(id: string, intentosActuales: number): Promise<number> {
+  const n = (intentosActuales ?? 0) + 1
+  const { error } = await supabase
+    .from("leads")
+    .update({ contactos_intentos: n, ultimo_contacto_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+  return n
+}
+
+// Borra el último registro de contacto (deshacer un click por error).
+export async function limpiarContacto(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("leads")
+    .update({ contactos_intentos: 0, ultimo_contacto_at: null, updated_at: new Date().toISOString() })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
 }
 
 // Vuelve un lead rechazado a "nuevo" (deshacer).

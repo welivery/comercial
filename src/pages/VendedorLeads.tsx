@@ -6,6 +6,7 @@ import {
   Check,
   Mail,
   Phone,
+  PhoneOutgoing,
   Plus,
   RefreshCw,
   Send,
@@ -19,7 +20,16 @@ import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useCreditosLeads, useInscripciones, useLeads, useObjetivos, useSecuencias } from "@/hooks/useData"
-import { asignarLeads, convertirLead, inscribir, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
+import {
+  asignarLeads,
+  convertirLead,
+  inscribir,
+  limpiarContacto,
+  marcarContactado,
+  reactivarLead,
+  rechazarLead,
+  sembrarLeadsBase,
+} from "@/data/api"
 import { generarLeadsIA } from "@/data/leads"
 import { asignarBucket } from "@/lib/buckets"
 import { MOTIVOS_RECHAZO, MOTIVO_RECHAZO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
@@ -63,6 +73,16 @@ function extraerContacto(t?: string | null): string | null {
 // Motivo sin la cola de contacto (ya vive en columnas propias).
 function motivoCorto(t?: string | null): string {
   return (t ?? "").split(/·\s*contacto:/i)[0].trim()
+}
+// "hace 3 d", "hace 2 h", "recién" — para mostrar cuándo fue el último contacto.
+function haceCuanto(iso?: string | null): string {
+  if (!iso) return ""
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (min < 1) return "recién"
+  if (min < 60) return `hace ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `hace ${h} h`
+  return `hace ${Math.floor(h / 24)} d`
 }
 
 interface OpForm {
@@ -125,6 +145,7 @@ export function VendedorLeads() {
   const [estadoFiltro, setEstadoFiltro] = useState<LeadEstado | "todos">("nuevo")
   const [periodo, setPeriodo] = useState("todo")
   const [secFiltro, setSecFiltro] = useState<"todos" | "en_sec" | "sin_sec">("todos")
+  const [contFiltro, setContFiltro] = useState<"todos" | "contactados" | "sin_contactar">("todos")
 
   // Un lead está "en secuencia" si tiene una inscripción viva (no terminada/rebotada).
   const enSecuencia = (id: string) => {
@@ -136,7 +157,7 @@ export function VendedorLeads() {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [asignarA, setAsignarA] = useState("")
   const [asignando, setAsignando] = useState(false)
-  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro])
+  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro, contFiltro])
 
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
@@ -177,12 +198,17 @@ export function VendedorLeads() {
     const lista = enRango
       .filter((l) => estadoFiltro === "todos" || l.estado === estadoFiltro)
       .filter((l) => secFiltro === "todos" || (secFiltro === "en_sec" ? enSecuencia(l.id) : !enSecuencia(l.id)))
+      .filter(
+        (l) =>
+          contFiltro === "todos" ||
+          (contFiltro === "contactados" ? l.contactos_intentos > 0 : l.contactos_intentos === 0)
+      )
       .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
     return {
       kpi: { traidos: enRango.length, nuevos, conv, rech, pct: enRango.length ? Math.round((conv / enRango.length) * 100) : 0 },
       visibles: lista,
     }
-  }, [leads, periodo, estadoFiltro, secFiltro, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [leads, periodo, estadoFiltro, secFiltro, contFiltro, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Solo los "nuevo" son seleccionables (son los que se pueden inscribir).
   const seleccionables = useMemo(() => visibles.filter((l) => l.estado === "nuevo"), [visibles])
@@ -284,6 +310,28 @@ export function VendedorLeads() {
       reload()
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "No se pudo reactivar")
+    }
+  }
+
+  async function contactarSinRta(l: Lead) {
+    try {
+      const n = await marcarContactado(l.id, l.contactos_intentos)
+      reload()
+      setAviso({
+        tipo: "info",
+        texto: `${l.nombre}: contacto ${n === 1 ? "registrado" : `×${n}`} sin respuesta. Queda para reintentar (filtro “Contactados”).`,
+      })
+    } catch (e) {
+      setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo registrar el contacto" })
+    }
+  }
+
+  async function borrarContacto(l: Lead) {
+    try {
+      await limpiarContacto(l.id)
+      reload()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "No se pudo deshacer")
     }
   }
 
@@ -583,9 +631,18 @@ export function VendedorLeads() {
               ))}
             </div>
             <select
+              value={contFiltro}
+              onChange={(ev) => setContFiltro(ev.target.value as typeof contFiltro)}
+              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+            >
+              <option value="todos">Contacto: todos</option>
+              <option value="contactados">Ya contactados (sin rta)</option>
+              <option value="sin_contactar">Sin contactar</option>
+            </select>
+            <select
               value={secFiltro}
               onChange={(ev) => setSecFiltro(ev.target.value as typeof secFiltro)}
-              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+              className="rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
             >
               <option value="todos">Secuencia: todos</option>
               <option value="en_sec">En secuencia</option>
@@ -740,6 +797,16 @@ export function VendedorLeads() {
                                       {insc.estado === "pausada" ? "Pausada" : "En secuencia"}
                                     </span>
                                   ))}
+                                {l.estado === "nuevo" && l.contactos_intentos > 0 && (
+                                  <span
+                                    title={l.ultimo_contacto_at ? `Último contacto: ${new Date(l.ultimo_contacto_at).toLocaleString("es-CL")}` : undefined}
+                                    className="inline-flex items-center gap-1 rounded-full bg-[#FCF3E2] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#a5741a]"
+                                  >
+                                    <PhoneOutgoing size={10} />
+                                    Contactado{l.contactos_intentos > 1 ? ` ×${l.contactos_intentos}` : ""} · sin rta
+                                    {l.ultimo_contacto_at ? ` · ${haceCuanto(l.ultimo_contacto_at)}` : ""}
+                                  </span>
+                                )}
                               </div>
                               {motivoCorto(l.motivo) && (
                                 <div className="mt-0.5 max-w-[380px] truncate text-[11.5px] text-slate">
@@ -809,6 +876,22 @@ export function VendedorLeads() {
                                 ) : (
                                   <IconBtn title="Poner en secuencia" onClick={() => abrirSecuencia(l)}>
                                     <Send size={15} />
+                                  </IconBtn>
+                                )}
+                                <IconBtn
+                                  title={
+                                    l.contactos_intentos > 0
+                                      ? `Registrar otro intento (van ${l.contactos_intentos})`
+                                      : "Marcar contactado sin respuesta"
+                                  }
+                                  tone={l.contactos_intentos > 0 ? "amber" : undefined}
+                                  onClick={() => contactarSinRta(l)}
+                                >
+                                  <PhoneOutgoing size={15} />
+                                </IconBtn>
+                                {l.contactos_intentos > 0 && (
+                                  <IconBtn title="Borrar registro de contacto" onClick={() => borrarContacto(l)}>
+                                    <Undo2 size={15} />
                                   </IconBtn>
                                 )}
                                 <IconBtn
@@ -1064,7 +1147,7 @@ function IconBtn({
 }: {
   title: string
   onClick: () => void
-  tone?: "blue" | "error"
+  tone?: "blue" | "error" | "amber"
   children: React.ReactNode
 }) {
   return (
@@ -1075,7 +1158,8 @@ function IconBtn({
       className={cn(
         "grid size-8 place-items-center rounded-md text-slate hover:bg-mist",
         tone === "blue" && "text-blue hover:bg-[#EEF3FE]",
-        tone === "error" && "hover:bg-[#FBE2E2] hover:text-error"
+        tone === "error" && "hover:bg-[#FBE2E2] hover:text-error",
+        tone === "amber" && "text-[#a5741a] hover:bg-[#FCF3E2]"
       )}
     >
       {children}

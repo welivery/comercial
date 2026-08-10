@@ -65,6 +65,8 @@ Correr en este orden si todavía no se corrieron:
 11. `secuencias-pixel.sql` — tracking de apertura (columnas abierto_at / aperturas).
 12. `secuencias-responder.sql` — guardar el texto de la respuesta + responder a mano.
 13. `secuencias-seguimiento.sql` — seguimiento infalible: pendiente_humano + ia_reunion.
+14. `leads-rechazo-nota.sql` — comentario libre al rechazar un lead (historial).
+15. `leads-contacto.sql` — intentos de contacto sin respuesta (reintentos + historial).
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se
