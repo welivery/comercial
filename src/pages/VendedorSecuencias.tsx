@@ -72,29 +72,34 @@ const SENT_COLOR: Record<string, string> = { positivo: "#1E9E6A", negativo: "#DB
 const PASO_VACIO: PasoInput = { orden: 1, dias_espera: 3, asunto: "", cuerpo: "", activo: true }
 
 // KPIs de secuencias a partir de una lista de inscripciones.
-function kpiSec(insc: { estado: InscripcionEstado; paso_actual: number }[]) {
+function kpiSec(insc: { estado: InscripcionEstado; paso_actual: number; abierto: boolean }[]) {
   const enSecuencia = insc.filter((i) => i.estado === "activa" || i.estado === "pausada").length
   const respondieron = insc.filter((i) => i.estado === "respondio").length
+  const abrieron = insc.filter((i) => i.abierto).length
   const mails = insc.reduce((a, i) => a + (i.paso_actual || 0), 0)
   const contactados = insc.filter((i) => (i.paso_actual || 0) > 0 || i.estado === "respondio").length
   const tasa = contactados ? Math.round((respondieron / contactados) * 100) : 0
-  return { total: insc.length, enSecuencia, respondieron, mails, tasa }
+  const tasaApertura = contactados ? Math.round((abrieron / contactados) * 100) : 0
+  return { total: insc.length, enSecuencia, respondieron, abrieron, mails, contactados, tasa, tasaApertura }
 }
 
 function KpiFila({ k }: { k: ReturnType<typeof kpiSec> }) {
   const cards = [
-    { label: "En secuencia", valor: String(k.enSecuencia), color: "#2F5BE6" },
-    { label: "Mails enviados", valor: String(k.mails), color: "#152A4F" },
-    { label: "Respondieron", valor: String(k.respondieron), color: "#1E9E6A" },
-    { label: "Tasa de respuesta", valor: `${k.tasa}%`, color: "#6FE0CB" },
+    { label: "En secuencia", valor: String(k.enSecuencia), sub: "", color: "#2F5BE6" },
+    { label: "Mails enviados", valor: String(k.mails), sub: "", color: "#152A4F" },
+    { label: "Abrieron", valor: String(k.abrieron), sub: k.contactados ? `${k.tasaApertura}%` : "", color: "#6FE0CB" },
+    { label: "Respondieron", valor: String(k.respondieron), sub: k.contactados ? `${k.tasa}%` : "", color: "#1E9E6A" },
   ]
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {cards.map((c) => (
         <Card key={c.label} className="p-3.5">
           <div className="text-[11.5px] font-medium text-slate">{c.label}</div>
-          <div className="mt-1 text-[22px] font-semibold tabular-nums" style={{ color: c.color }}>
-            {c.valor}
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-[22px] font-semibold tabular-nums" style={{ color: c.color }}>
+              {c.valor}
+            </span>
+            {c.sub && <span className="text-[12px] font-medium text-slate">{c.sub}</span>}
           </div>
         </Card>
       ))}
@@ -344,6 +349,7 @@ export function VendedorSecuencias() {
                       <th className="px-4 py-2.5 font-medium">Vendedor</th>
                       <th className="px-4 py-2.5 font-medium">En secuencia</th>
                       <th className="px-4 py-2.5 font-medium">Mails enviados</th>
+                      <th className="px-4 py-2.5 font-medium">Abrieron</th>
                       <th className="px-4 py-2.5 font-medium">Respondieron</th>
                       <th className="px-4 py-2.5 font-medium">Tasa</th>
                     </tr>
@@ -354,6 +360,7 @@ export function VendedorSecuencias() {
                         <td className="px-4 py-2.5 text-[13px] font-medium text-ink">{r.nombre}</td>
                         <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.enSecuencia}</td>
                         <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.mails}</td>
+                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.abrieron}</td>
                         <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.respondieron}</td>
                         <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.tasa}%</td>
                       </tr>
@@ -651,12 +658,22 @@ export function VendedorSecuencias() {
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate">{seq?.nombre ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <span
-                        className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                        style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
-                      >
-                        {INSC_LABEL[ins.estado]}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                          style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
+                        >
+                          {INSC_LABEL[ins.estado]}
+                        </span>
+                        {ins.abierto && (
+                          <span
+                            title={ins.aperturas > 1 ? `Abrió ${ins.aperturas} veces` : "Abrió el mail"}
+                            className="rounded-md bg-[#EAFBF5] px-2 py-0.5 text-[11px] font-semibold text-[#12806c]"
+                          >
+                            Abrió
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-[12.5px] tabular-nums text-slate">{ins.paso_actual}</td>
                     <td className="px-4 py-3">

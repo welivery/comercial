@@ -61,6 +61,13 @@ Correr en este orden si todavía no se corrieron:
 7. `secuencias-vars.sql` — persona de contacto en el lead + empresa en la inscripción.
 8. `secuencias-limites.sql` — tope diario por casilla + espaciado entre mails.
 9. `clientes-deuda.sql` — marca de deuda / problema de pago en la base.
+10. `leads-reasignar.sql` — permitir reasignar leads entre vendedores.
+11. `secuencias-pixel.sql` — tracking de apertura (columnas abierto_at / aperturas).
+
+**Function `track`** (pixel de apertura): deployar SIN Verify JWT. Sin secrets
+propios (usa SUPABASE_URL / SERVICE_ROLE inyectados). El cron manda el mail en
+HTML con un `<img>` 1x1 que apunta a `/functions/v1/track?i=<inscripcion>`.
+Ojo: la apertura es aproximada (muchos clientes bloquean/pre-cargan imágenes).
 
 ## Secuencias de email — envío y respuestas (Etapas B y C)
 

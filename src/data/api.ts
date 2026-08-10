@@ -754,6 +754,8 @@ function mapInscripcion(r: any): SecuenciaInscripcion {
     paso_actual: r.paso_actual ?? 0,
     proximo_envio_at: r.proximo_envio_at ?? null,
     ultimo_envio_at: r.ultimo_envio_at ?? null,
+    abierto: !!r.abierto_at,
+    aperturas: r.aperturas ?? 0,
     ia_sentimiento: (r.ia_sentimiento ?? null) as SecuenciaInscripcion["ia_sentimiento"],
     ia_confianza: r.ia_confianza ?? null,
     ia_resumen: r.ia_resumen ?? null,
@@ -862,15 +864,19 @@ export interface InscripcionKpi {
   vendedor_id: string
   estado: InscripcionEstado
   paso_actual: number
+  abierto: boolean
 }
 export async function fetchInscripcionesEquipo(): Promise<InscripcionKpi[]> {
-  const { data, error } = await supabase.from("secuencia_inscripciones").select("vendedor_id, estado, paso_actual")
+  const { data, error } = await supabase
+    .from("secuencia_inscripciones")
+    .select("vendedor_id, estado, paso_actual, abierto_at")
   if (error) throw new Error(error.message)
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return (data ?? []).map((r: any) => ({
     vendedor_id: r.vendedor_id,
     estado: r.estado as InscripcionEstado,
     paso_actual: r.paso_actual ?? 0,
+    abierto: !!r.abierto_at,
   }))
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }

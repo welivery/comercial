@@ -199,6 +199,8 @@ export interface SecuenciaInscripcion {
   paso_actual: number
   proximo_envio_at: string | null
   ultimo_envio_at: string | null
+  abierto: boolean // abrió al menos un mail (pixel)
+  aperturas: number
   // Clasificación de la respuesta por IA (Etapa C). null = todavía sin respuesta.
   ia_sentimiento: IaSentimiento | null
   ia_confianza: number | null
