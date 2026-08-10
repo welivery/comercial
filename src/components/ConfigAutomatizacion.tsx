@@ -57,6 +57,33 @@ export function ConfigAutomatizacion() {
         onToggle={() => setCfg({ ...cfg, envio_activo: !cfg.envio_activo })}
       />
 
+      {cfg.envio_activo && (
+        <div className="ml-1 flex flex-col gap-3 rounded-xl bg-mist/50 p-3.5 text-[12.5px] text-ink sm:flex-row sm:items-center sm:gap-6">
+          <label className="flex items-center gap-2">
+            Máximo por día por casilla:
+            <input
+              type="number"
+              min={1}
+              value={cfg.max_dia_casilla}
+              onChange={(e) => setCfg({ ...cfg, max_dia_casilla: Number(e.target.value) })}
+              className="w-[72px] rounded-lg border border-input bg-white px-2.5 py-1.5 text-[13px] tabular-nums outline-none focus:border-blue"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            Esperar entre mails:
+            <input
+              type="number"
+              min={0}
+              value={cfg.min_minutos}
+              onChange={(e) => setCfg({ ...cfg, min_minutos: Number(e.target.value) })}
+              className="w-[64px] rounded-lg border border-input bg-white px-2.5 py-1.5 text-[13px] tabular-nums outline-none focus:border-blue"
+            />
+            min
+          </label>
+          <span className="text-[11.5px] text-slate">Protege la reputación del dominio y evita el spam.</span>
+        </div>
+      )}
+
       <Fila
         icon={<Bot size={16} className="text-blue" />}
         titulo="Clasificar respuestas con IA"

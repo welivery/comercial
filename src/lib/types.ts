@@ -211,6 +211,8 @@ export interface ConfigSecuencias {
   ia_activa: boolean // clasificar respuestas con IA
   ia_autonomia: IaAutonomia // 'sugiere' = humano confirma; 'auto_claros' = actúa sola si está segura
   ia_limite_mensual: number // tope de respuestas clasificadas por mes (control de costo)
+  max_dia_casilla: number // tope de mails por día por casilla (reputación)
+  min_minutos: number // minutos mínimos entre mails de una misma casilla (anti-spam)
 }
 
 // Casilla de email conectada por el vendedor (OAuth Google). El refresh_token

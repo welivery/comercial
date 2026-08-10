@@ -841,7 +841,9 @@ export function urlConectarGmail(vendedorId: string): string {
 export async function fetchConfigSecuencias(): Promise<ConfigSecuencias> {
   const { data, error } = await supabase
     .from("config_ventas")
-    .select("secuencias_envio_activo, secuencias_ia_activa, secuencias_ia_autonomia, secuencias_ia_limite_mensual")
+    .select(
+      "secuencias_envio_activo, secuencias_ia_activa, secuencias_ia_autonomia, secuencias_ia_limite_mensual, secuencias_max_dia_casilla, secuencias_min_minutos"
+    )
     .eq("id", 1)
     .maybeSingle()
   if (error) throw new Error(error.message)
@@ -850,6 +852,8 @@ export async function fetchConfigSecuencias(): Promise<ConfigSecuencias> {
     ia_activa: data?.secuencias_ia_activa ?? false,
     ia_autonomia: (data?.secuencias_ia_autonomia ?? "auto_claros") as IaAutonomia,
     ia_limite_mensual: data?.secuencias_ia_limite_mensual ?? 200,
+    max_dia_casilla: data?.secuencias_max_dia_casilla ?? 30,
+    min_minutos: data?.secuencias_min_minutos ?? 3,
   }
 }
 
@@ -861,6 +865,8 @@ export async function guardarConfigSecuencias(c: ConfigSecuencias): Promise<void
       secuencias_ia_activa: c.ia_activa,
       secuencias_ia_autonomia: c.ia_autonomia,
       secuencias_ia_limite_mensual: c.ia_limite_mensual,
+      secuencias_max_dia_casilla: c.max_dia_casilla,
+      secuencias_min_minutos: c.min_minutos,
     })
     .eq("id", 1)
   if (error) throw new Error(error.message)

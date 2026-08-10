@@ -58,6 +58,8 @@ Correr en este orden si todavía no se corrieron:
 5. `clientes-contacto.sql` — **contacto/email/telefono/comuna** en `clientes`
    (+ backfill desde `nota` y a los leads ya sembrados).
 6. `secuencias-auto.sql` — config de automatización + estado IA por inscripción.
+7. `secuencias-vars.sql` — persona de contacto en el lead + empresa en la inscripción.
+8. `secuencias-limites.sql` — tope diario por casilla + espaciado entre mails.
 
 ## Secuencias de email — envío y respuestas (Etapas B y C)
 
@@ -99,3 +101,9 @@ sola vez con `claude-haiku` (modelo barato). Con autonomía **“auto en casos
 clarísimos”**, un *no* seguro rechaza el lead y corta; el resto (interés o duda)
 queda marcado como *respondió* para que el vendedor lo pase a oportunidad. El tope
 mensual de clasificaciones acota el costo.
+
+**Límites de envío (reputación / anti-spam):** por casilla se respeta un **tope
+diario** (default 30 mails/día) y un **espaciado mínimo** entre mails (default 3
+min). Ambos son configurables en Secuencias → Automatización. Como el cron corre
+cada ~5 min, en la práctica sale como mucho 1 mail por casilla por corrida, bien
+espaciado; el tope diario corta cuando se alcanza.
