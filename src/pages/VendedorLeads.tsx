@@ -140,6 +140,7 @@ export function VendedorLeads() {
 
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
+  const [rechNota, setRechNota] = useState("")
 
   const [convLead, setConvLead] = useState<Lead | null>(null)
   const [form, setForm] = useState<OpForm | null>(null)
@@ -269,7 +270,7 @@ export function VendedorLeads() {
   async function confirmarRechazo() {
     if (!rechId) return
     try {
-      await rechazarLead(rechId, rechMotivo)
+      await rechazarLead(rechId, rechMotivo, rechNota)
       setRechId(null)
       reload()
     } catch (e) {
@@ -745,6 +746,11 @@ export function VendedorLeads() {
                                   {motivoCorto(l.motivo)}
                                 </div>
                               )}
+                              {l.estado === "rechazado" && l.rechazo_nota && (
+                                <div className="mt-1 max-w-[380px] rounded border-l-2 border-error/40 bg-[#FBE2E2]/50 px-2 py-1 text-[11.5px] text-[#8a2f2f]">
+                                  <b>Nota de rechazo:</b> {l.rechazo_nota}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -811,6 +817,7 @@ export function VendedorLeads() {
                                   onClick={() => {
                                     setRechId(l.id)
                                     setRechMotivo("no_interesado")
+                                    setRechNota("")
                                   }}
                                 >
                                   <Ban size={15} />
@@ -918,6 +925,16 @@ export function VendedorLeads() {
                 </option>
               ))}
             </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Comentario (opcional)</span>
+            <textarea
+              value={rechNota}
+              onChange={(e) => setRechNota(e.target.value)}
+              className="inp min-h-[70px] resize-y"
+              placeholder="Ej: pidió no contactar hasta 2027, tiene contrato con otro courier…"
+            />
+            <span className="text-[11.5px] text-muted">Queda en el historial del lead para no volver a contactarlo.</span>
           </label>
           <div className="mt-1 flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => setRechId(null)}>

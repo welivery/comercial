@@ -505,6 +505,7 @@ function mapLead(r: any): Lead {
     origen: r.origen,
     estado: r.estado,
     motivo_rechazo: (r.motivo_rechazo ?? null) as MotivoRechazo | null,
+    rechazo_nota: r.rechazo_nota ?? null,
     oportunidad_id: r.oportunidad_id ?? null,
     created_at: r.created_at,
   }
@@ -627,10 +628,15 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
   return elegidos.length
 }
 
-export async function rechazarLead(id: string, motivo: MotivoRechazo): Promise<void> {
+export async function rechazarLead(id: string, motivo: MotivoRechazo, nota?: string | null): Promise<void> {
   const { error } = await supabase
     .from("leads")
-    .update({ estado: "rechazado", motivo_rechazo: motivo, updated_at: new Date().toISOString() })
+    .update({
+      estado: "rechazado",
+      motivo_rechazo: motivo,
+      rechazo_nota: nota?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
   if (error) throw new Error(error.message)
 }
@@ -667,7 +673,7 @@ export async function asignarLeads(
 export async function reactivarLead(id: string): Promise<void> {
   const { error } = await supabase
     .from("leads")
-    .update({ estado: "nuevo", motivo_rechazo: null, updated_at: new Date().toISOString() })
+    .update({ estado: "nuevo", motivo_rechazo: null, rechazo_nota: null, updated_at: new Date().toISOString() })
     .eq("id", id)
   if (error) throw new Error(error.message)
 }

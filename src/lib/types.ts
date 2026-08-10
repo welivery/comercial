@@ -154,6 +154,7 @@ export interface Lead {
   origen: LeadOrigen
   estado: LeadEstado
   motivo_rechazo: MotivoRechazo | null
+  rechazo_nota: string | null // comentario libre al rechazar (historial)
   oportunidad_id: string | null
   created_at: string
 }
