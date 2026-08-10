@@ -290,14 +290,6 @@ export function VendedorSecuencias() {
   // Un lead solo se puede pasar a oportunidad si sigue "nuevo".
   const leadConvertible = (id: string | null) => !!id && leads.some((l) => l.id === id && l.estado === "nuevo")
 
-  async function marcarRespondio(ins: SecuenciaInscripcion) {
-    try {
-      await actualizarInscripcion(ins.id, "respondio")
-      reloadInsc()
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo actualizar")
-    }
-  }
   async function noInteresado(ins: SecuenciaInscripcion) {
     if (
       !window.confirm(
@@ -678,6 +670,7 @@ export function VendedorSecuencias() {
                 <th className="px-4 py-2.5 font-medium">Contacto</th>
                 <th className="px-4 py-2.5 font-medium">Secuencia</th>
                 <th className="px-4 py-2.5 font-medium">Estado</th>
+                <th className="px-4 py-2.5 font-medium">Abrió</th>
                 <th className="px-4 py-2.5 font-medium">Paso</th>
                 <th className="px-4 py-2.5" />
               </tr>
@@ -711,76 +704,61 @@ export function VendedorSecuencias() {
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate">{seq?.nombre ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                        style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
+                      >
+                        {INSC_LABEL[ins.estado]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {ins.abierto ? (
                         <span
-                          className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                          style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
+                          title={ins.aperturas > 1 ? `Abrió ${ins.aperturas} veces` : "Abrió el mail"}
+                          className="inline-flex items-center gap-1 text-[12px] font-semibold text-[#12806c]"
                         >
-                          {INSC_LABEL[ins.estado]}
+                          <Eye size={14} /> Sí{ins.aperturas > 1 ? ` ·${ins.aperturas}` : ""}
                         </span>
-                        {ins.abierto && (
-                          <span
-                            title={ins.aperturas > 1 ? `Abrió ${ins.aperturas} veces` : "Abrió el mail"}
-                            className="rounded-md bg-[#EAFBF5] px-2 py-0.5 text-[11px] font-semibold text-[#12806c]"
-                          >
-                            Abrió
-                          </span>
-                        )}
-                      </div>
+                      ) : (
+                        <span className="text-[12px] text-muted">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-[12.5px] tabular-nums text-slate">{ins.paso_actual}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        {/* Respondió → decidir: oportunidad o rechazo */}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Respondió → decidir qué hacer con la respuesta */}
                         {respondio && (
                           <>
                             <Button size="sm" variant="outline" className="text-blue" onClick={() => abrirResponder(ins)}>
                               <Reply /> Responder
                             </Button>
-                            {leadConvertible(ins.lead_id) ? (
+                            {leadConvertible(ins.lead_id) && (
                               <Button asChild size="sm" variant="blue">
                                 <Link to={`/leads?convertir=${ins.lead_id}`}>
-                                  <Plus /> Pasar a oportunidad
+                                  <Plus /> Oportunidad
                                 </Link>
                               </Button>
-                            ) : ins.lead_id ? (
-                              <span className="text-[11.5px] text-slate">Lead ya clasificado</span>
-                            ) : null}
-                            <Button size="sm" variant="outline" onClick={() => noInteresado(ins)}>
-                              <ThumbsDown /> No sirvió
-                            </Button>
+                            )}
+                            <button
+                              onClick={() => noInteresado(ins)}
+                              title="No sirvió — corta la secuencia y rechaza el lead"
+                              className="grid size-8 place-items-center rounded-md text-slate hover:bg-[#FBE2E2] hover:text-error"
+                            >
+                              <ThumbsDown size={15} />
+                            </button>
                           </>
                         )}
-                        {/* En curso → marcar respuesta a mano (hasta la detección automática) */}
+                        {/* En curso → acciones compactas (la respuesta se detecta sola) */}
                         {enCurso && (
                           <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-blue"
-                              title="Forzar el envío del próximo paso ahora (para probar)"
-                              disabled={enviando === ins.id}
+                            <button
                               onClick={() => enviarAhora(ins)}
+                              disabled={enviando === ins.id}
+                              title="Enviar ahora el próximo paso (para probar)"
+                              className="grid size-8 place-items-center rounded-md text-blue hover:bg-[#EEF3FE] disabled:opacity-50"
                             >
-                              <Zap /> {enviando === ins.id ? "Enviando…" : "Enviar ahora"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-success"
-                              title="Marcar que respondió con interés"
-                              onClick={() => marcarRespondio(ins)}
-                            >
-                              <ThumbsUp /> Respondió
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              title="No interesado — corta la secuencia y rechaza el lead"
-                              onClick={() => noInteresado(ins)}
-                            >
-                              <ThumbsDown /> No
-                            </Button>
+                              <Zap size={15} />
+                            </button>
                             {ins.estado === "activa" ? (
                               <button
                                 onClick={() => actualizarInscripcion(ins.id, "pausada").then(reloadInsc)}
