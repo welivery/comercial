@@ -72,20 +72,30 @@ const SENT_COLOR: Record<string, string> = { positivo: "#1E9E6A", negativo: "#DB
 const PASO_VACIO: PasoInput = { orden: 1, dias_espera: 3, asunto: "", cuerpo: "", activo: true }
 
 export function VendedorSecuencias() {
-  const { vendedor, rol } = useVentas()
+  const { vendedor, modo } = useVentas()
+  // Dos vistas en la misma ruta, sin duplicar:
+  //  · Admin  → general: automatización + plantillas del equipo (aplican a todos).
+  //  · Vendedor → personal: conectar email + mis secuencias + contactos/respuestas.
+  const esAdmin = modo === "admin"
   const { data: secuenciasData, loading, error, reload } = useSecuencias(vendedor.id)
   const { data: inscData, reload: reloadInsc } = useInscripciones(vendedor.id)
   const { data: leadsData } = useLeads(vendedor.id)
-  const secuencias = useMemo(() => secuenciasData ?? [], [secuenciasData])
+  const secuenciasTodas = useMemo(() => secuenciasData ?? [], [secuenciasData])
+  // En admin solo se listan las plantillas del equipo (vendedor_id null).
+  const secuencias = useMemo(
+    () => (esAdmin ? secuenciasTodas.filter((s) => s.vendedor_id === null) : secuenciasTodas),
+    [secuenciasTodas, esAdmin]
+  )
   const inscripciones = useMemo(() => inscData ?? [], [inscData])
   const leads = useMemo(() => leadsData ?? [], [leadsData])
 
   const [selId, setSelId] = useState<string | null>(null)
   const seleccionada = secuencias.find((s) => s.id === selId) ?? null
   const esPlantilla = !!seleccionada && seleccionada.vendedor_id === null
-  // El admin edita las plantillas compartidas del equipo; el vendedor, solo las
-  // suyas (para las compartidas usa "Duplicar para editar").
-  const esPropia = !!seleccionada && (seleccionada.vendedor_id === vendedor.id || rol === "admin")
+  // Admin edita las plantillas del equipo; el vendedor solo las suyas (para las
+  // compartidas usa "Duplicar para editar").
+  const esPropia =
+    !!seleccionada && (esAdmin ? seleccionada.vendedor_id === null : seleccionada.vendedor_id === vendedor.id)
 
   // Editor de pasos (borrador local de la secuencia seleccionada).
   const [pasos, setPasos] = useState<PasoInput[]>([])
@@ -142,7 +152,12 @@ export function VendedorSecuencias() {
 
   async function nuevaSecuencia() {
     try {
-      const id = await crearSecuencia(vendedor.id, "Nueva secuencia", "reactivacion")
+      // Admin crea plantillas del equipo (vendedor_id null); el vendedor, propias.
+      const id = await crearSecuencia(
+        esAdmin ? null : vendedor.id,
+        esAdmin ? "Nueva plantilla" : "Nueva secuencia",
+        "reactivacion"
+      )
       reload()
       setSelId(id)
     } catch (e) {
@@ -235,34 +250,57 @@ export function VendedorSecuencias() {
 
   return (
     <>
-      <PageHead titulo="Secuencias de email" descripcion="Cadencias de mails para reactivar y prospectar">
-        <Button variant="outline" onClick={() => setInscOpen(true)}>
-          <Send /> Inscribir contacto
-        </Button>
+      <PageHead
+        titulo={esAdmin ? "Secuencias del equipo" : "Secuencias de email"}
+        descripcion={
+          esAdmin
+            ? "Plantillas que usan todos los vendedores + automatización"
+            : "Cadencias de mails para reactivar y prospectar"
+        }
+      >
+        {!esAdmin && (
+          <Button variant="outline" onClick={() => setInscOpen(true)}>
+            <Send /> Inscribir contacto
+          </Button>
+        )}
         <Button variant="blue" onClick={nuevaSecuencia}>
-          <Plus /> Nueva secuencia
+          <Plus /> {esAdmin ? "Nueva plantilla" : "Nueva secuencia"}
         </Button>
       </PageHead>
 
-      {rol === "admin" && <ConfigAutomatizacion />}
-
-      <ConexionEmail vendedorId={vendedor.id} />
-
-      <div className="mb-4 flex items-start gap-2 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-blue">
-        <Info size={16} className="mt-px shrink-0" />
-        <span>
-          Acá armás y editás tus secuencias. Conectá tu email arriba para poder enviarlas. Con el <b>envío automático</b>{" "}
-          prendido (lo configura el admin), los mails salen según los tiempos de cada paso y la secuencia frena cuando el
-          contacto responde. Si no, podés marcar las respuestas a mano acá abajo.
-        </span>
-      </div>
+      {esAdmin ? (
+        <>
+          <ConfigAutomatizacion />
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-blue">
+            <Info size={16} className="mt-px shrink-0" />
+            <span>
+              Estas son las <b>plantillas del equipo</b>: las edita el admin y las usan todos los vendedores. Cada
+              vendedor conecta su propio email y las envía desde su casilla (eso lo hace cada uno en su vista). Prendé el{" "}
+              <b>envío automático</b> arriba para que salgan solas.
+            </span>
+          </div>
+        </>
+      ) : (
+        <>
+          <ConexionEmail vendedorId={vendedor.id} />
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5 text-[12.5px] leading-relaxed text-blue">
+            <Info size={16} className="mt-px shrink-0" />
+            <span>
+              Acá armás y editás tus secuencias (o duplicás una plantilla del equipo). Conectá tu email arriba para
+              poder enviarlas. Con el <b>envío automático</b> prendido (lo configura el admin), los mails salen según los
+              tiempos de cada paso y la secuencia frena cuando el contacto responde. Si no, podés marcar las respuestas a
+              mano acá abajo.
+            </span>
+          </div>
+        </>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr] lg:items-start">
         {/* Lista de secuencias */}
         <div className="flex flex-col gap-2">
           {secuencias.length === 0 && (
             <Card className="p-4 text-center text-[13px] text-slate">
-              Todavía no hay secuencias. Creá una o duplicá una plantilla.
+              {esAdmin ? "Todavía no hay plantillas. Creá una." : "Todavía no hay secuencias. Creá una o duplicá una plantilla."}
             </Card>
           )}
           {secuencias.map((s) => {
@@ -298,17 +336,19 @@ export function VendedorSecuencias() {
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      duplicar(s)
-                    }}
-                    title="Duplicar"
-                    className="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-mist hover:text-ink"
-                  >
-                    <Copy size={14} />
-                  </button>
-                  {!plantilla && (
+                  {!esAdmin && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        duplicar(s)
+                      }}
+                      title="Duplicar"
+                      className="grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-mist hover:text-ink"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  )}
+                  {(esAdmin || !plantilla) && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
@@ -471,7 +511,9 @@ export function VendedorSecuencias() {
         )}
       </div>
 
-      {/* Inscripciones */}
+      {/* Inscripciones (solo vista vendedor: son personales de cada uno) */}
+      {!esAdmin && (
+      <>
       <div className="mb-3 mt-7 flex flex-wrap items-center gap-3">
         <h2 className="text-[15px] font-semibold text-navy">Contactos en secuencia</h2>
         {respondieron > 0 && (
@@ -605,6 +647,8 @@ export function VendedorSecuencias() {
             </tbody>
           </table>
         </Card>
+      )}
+      </>
       )}
 
       {/* Vista previa de la plantilla con datos de ejemplo */}

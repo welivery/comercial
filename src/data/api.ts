@@ -684,7 +684,7 @@ export async function fetchPasos(secuenciaId: string): Promise<SecuenciaPaso[]> 
 }
 
 export async function crearSecuencia(
-  vendedorId: string,
+  vendedorId: string | null,
   nombre: string,
   objetivo: SecuenciaObjetivo
 ): Promise<string> {

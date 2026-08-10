@@ -33,6 +33,7 @@ const NAV_ADMIN: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={17} /> },
   { to: "/objetivos", label: "Objetivos", icon: <Target size={17} /> },
   { to: "/vendedores", label: "Vendedores", icon: <Users size={17} /> },
+  { to: "/secuencias", label: "Secuencias", icon: <Send size={17} /> },
   { to: "/usuarios", label: "Usuarios", icon: <UserCog size={17} /> },
 ]
 const NAV_ADMIN_DATOS: NavItem[] = [
