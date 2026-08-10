@@ -857,6 +857,24 @@ export async function guardarPasos(secuenciaId: string, pasos: PasoInput[]): Pro
   if (error) throw new Error(error.message)
 }
 
+// Inscripciones de TODO el equipo, en versión mínima para KPIs (admin).
+export interface InscripcionKpi {
+  vendedor_id: string
+  estado: InscripcionEstado
+  paso_actual: number
+}
+export async function fetchInscripcionesEquipo(): Promise<InscripcionKpi[]> {
+  const { data, error } = await supabase.from("secuencia_inscripciones").select("vendedor_id, estado, paso_actual")
+  if (error) throw new Error(error.message)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (data ?? []).map((r: any) => ({
+    vendedor_id: r.vendedor_id,
+    estado: r.estado as InscripcionEstado,
+    paso_actual: r.paso_actual ?? 0,
+  }))
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
 export async function fetchInscripciones(vendedorId: string): Promise<SecuenciaInscripcion[]> {
   if (!vendedorId) return []
   const { data, error } = await supabase

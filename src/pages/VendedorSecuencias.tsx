@@ -24,7 +24,7 @@ import { ConexionEmail } from "@/components/ConexionEmail"
 import { ConfigAutomatizacion } from "@/components/ConfigAutomatizacion"
 import { Cargando, ErrorMsg } from "@/components/widgets"
 import { useVentas } from "@/store"
-import { useInscripciones, useLeads, useSecuencias } from "@/hooks/useData"
+import { useInscripciones, useInscripcionesEquipo, useLeads, useSecuencias } from "@/hooks/useData"
 import {
   actualizarInscripcion,
   actualizarSecuencia,
@@ -71,8 +71,39 @@ const SENT_COLOR: Record<string, string> = { positivo: "#1E9E6A", negativo: "#DB
 
 const PASO_VACIO: PasoInput = { orden: 1, dias_espera: 3, asunto: "", cuerpo: "", activo: true }
 
+// KPIs de secuencias a partir de una lista de inscripciones.
+function kpiSec(insc: { estado: InscripcionEstado; paso_actual: number }[]) {
+  const enSecuencia = insc.filter((i) => i.estado === "activa" || i.estado === "pausada").length
+  const respondieron = insc.filter((i) => i.estado === "respondio").length
+  const mails = insc.reduce((a, i) => a + (i.paso_actual || 0), 0)
+  const contactados = insc.filter((i) => (i.paso_actual || 0) > 0 || i.estado === "respondio").length
+  const tasa = contactados ? Math.round((respondieron / contactados) * 100) : 0
+  return { total: insc.length, enSecuencia, respondieron, mails, tasa }
+}
+
+function KpiFila({ k }: { k: ReturnType<typeof kpiSec> }) {
+  const cards = [
+    { label: "En secuencia", valor: String(k.enSecuencia), color: "#2F5BE6" },
+    { label: "Mails enviados", valor: String(k.mails), color: "#152A4F" },
+    { label: "Respondieron", valor: String(k.respondieron), color: "#1E9E6A" },
+    { label: "Tasa de respuesta", valor: `${k.tasa}%`, color: "#6FE0CB" },
+  ]
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {cards.map((c) => (
+        <Card key={c.label} className="p-3.5">
+          <div className="text-[11.5px] font-medium text-slate">{c.label}</div>
+          <div className="mt-1 text-[22px] font-semibold tabular-nums" style={{ color: c.color }}>
+            {c.valor}
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 export function VendedorSecuencias() {
-  const { vendedor, modo } = useVentas()
+  const { vendedor, modo, vendedores } = useVentas()
   // Dos vistas en la misma ruta, sin duplicar:
   //  · Admin  → general: automatización + plantillas del equipo (aplican a todos).
   //  · Vendedor → personal: conectar email + mis secuencias + contactos/respuestas.
@@ -88,6 +119,28 @@ export function VendedorSecuencias() {
   )
   const inscripciones = useMemo(() => inscData ?? [], [inscData])
   const leads = useMemo(() => leadsData ?? [], [leadsData])
+
+  // KPIs: del vendedor (sus inscripciones) y del equipo (para admin).
+  const { data: inscEquipoData } = useInscripcionesEquipo()
+  const kpiVend = useMemo(() => kpiSec(inscripciones), [inscripciones])
+  const inscEquipo = useMemo(() => inscEquipoData ?? [], [inscEquipoData])
+  const kpiEquipo = useMemo(() => kpiSec(inscEquipo), [inscEquipo])
+  // Desglose por vendedor (admin).
+  const porVendedor = useMemo(() => {
+    const m = new Map<string, typeof inscEquipo>()
+    for (const i of inscEquipo) {
+      const arr = m.get(i.vendedor_id) ?? []
+      arr.push(i)
+      m.set(i.vendedor_id, arr)
+    }
+    return [...m.entries()]
+      .map(([vid, arr]) => ({
+        vendedor_id: vid,
+        nombre: vendedores.find((v) => v.id === vid)?.nombre ?? "—",
+        k: kpiSec(arr),
+      }))
+      .sort((a, b) => b.k.mails - a.k.mails)
+  }, [inscEquipo, vendedores])
 
   const [selId, setSelId] = useState<string | null>(null)
   const seleccionada = secuencias.find((s) => s.id === selId) ?? null
@@ -278,6 +331,37 @@ export function VendedorSecuencias() {
               vendedor conecta su propio email y las envía desde su casilla (eso lo hace cada uno en su vista). Prendé el{" "}
               <b>envío automático</b> arriba para que salgan solas.
             </span>
+          </div>
+
+          <div className="mb-5">
+            <h2 className="mb-2 text-[14px] font-semibold text-navy">Envíos del equipo</h2>
+            <KpiFila k={kpiEquipo} />
+            {porVendedor.length > 0 && (
+              <Card className="mt-3 overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
+                      <th className="px-4 py-2.5 font-medium">Vendedor</th>
+                      <th className="px-4 py-2.5 font-medium">En secuencia</th>
+                      <th className="px-4 py-2.5 font-medium">Mails enviados</th>
+                      <th className="px-4 py-2.5 font-medium">Respondieron</th>
+                      <th className="px-4 py-2.5 font-medium">Tasa</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {porVendedor.map((r) => (
+                      <tr key={r.vendedor_id} className="border-t border-border">
+                        <td className="px-4 py-2.5 text-[13px] font-medium text-ink">{r.nombre}</td>
+                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.enSecuencia}</td>
+                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.mails}</td>
+                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.respondieron}</td>
+                        <td className="px-4 py-2.5 text-[13px] tabular-nums text-slate">{r.k.tasa}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
           </div>
         </>
       ) : (
@@ -514,7 +598,11 @@ export function VendedorSecuencias() {
       {/* Inscripciones (solo vista vendedor: son personales de cada uno) */}
       {!esAdmin && (
       <>
-      <div className="mb-3 mt-7 flex flex-wrap items-center gap-3">
+      <div className="mb-3 mt-7">
+        <h2 className="mb-2 text-[15px] font-semibold text-navy">Mis envíos</h2>
+        <KpiFila k={kpiVend} />
+      </div>
+      <div className="mb-3 mt-5 flex flex-wrap items-center gap-3">
         <h2 className="text-[15px] font-semibold text-navy">Contactos en secuencia</h2>
         {respondieron > 0 && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-[#DFF2E9] px-2.5 py-1 text-[11.5px] font-semibold text-success">

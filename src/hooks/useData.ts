@@ -10,6 +10,7 @@ import {
   fetchEmailCuenta,
   fetchEventos,
   fetchInscripciones,
+  fetchInscripcionesEquipo,
   fetchLeads,
   fetchLeadsEquipo,
   fetchObjetivos,
@@ -78,6 +79,7 @@ export const usePasos = (secuenciaId: string | undefined) =>
   useAsync(() => (secuenciaId ? fetchPasos(secuenciaId) : Promise.resolve([])), [secuenciaId])
 export const useInscripciones = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchInscripciones(vendedorId) : Promise.resolve([])), [vendedorId])
+export const useInscripcionesEquipo = () => useAsync(() => fetchInscripcionesEquipo(), [])
 export const useEmailCuenta = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchEmailCuenta(vendedorId) : Promise.resolve(null)), [vendedorId])
 export const useConfigSecuencias = () => useAsync(() => fetchConfigSecuencias(), [])
