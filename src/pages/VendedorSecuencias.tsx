@@ -12,6 +12,7 @@ import {
   Plus,
   Reply,
   Send,
+  Zap,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -35,6 +36,7 @@ import {
   eliminarSecuencia,
   fetchPasos,
   guardarPasos,
+  enviarAhoraInscripcion,
   inscribir,
   rechazarLead,
   responderInscripcion,
@@ -309,6 +311,21 @@ export function VendedorSecuencias() {
       reloadInsc()
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "No se pudo actualizar")
+    }
+  }
+
+  const [enviando, setEnviando] = useState<string | null>(null)
+  async function enviarAhora(ins: SecuenciaInscripcion) {
+    if (!window.confirm(`¿Enviar ya el próximo paso a ${ins.destinatario_email}?`)) return
+    setEnviando(ins.id)
+    try {
+      await enviarAhoraInscripcion(ins.id)
+      reloadInsc()
+      window.alert("Mail enviado. Revisá la casilla del destinatario.")
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "No se pudo enviar")
+    } finally {
+      setEnviando(null)
     }
   }
 
@@ -737,6 +754,16 @@ export function VendedorSecuencias() {
                         {/* En curso → marcar respuesta a mano (hasta la detección automática) */}
                         {enCurso && (
                           <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-blue"
+                              title="Forzar el envío del próximo paso ahora (para probar)"
+                              disabled={enviando === ins.id}
+                              onClick={() => enviarAhora(ins)}
+                            >
+                              <Zap /> {enviando === ins.id ? "Enviando…" : "Enviar ahora"}
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"

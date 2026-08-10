@@ -65,6 +65,10 @@ Correr en este orden si todavía no se corrieron:
 11. `secuencias-pixel.sql` — tracking de apertura (columnas abierto_at / aperturas).
 12. `secuencias-responder.sql` — guardar el texto de la respuesta + responder a mano.
 
+**Function `enviar-ahora`** (forzar envío para probar): deployar **CON** Verify JWT.
+Manda el próximo paso de una inscripción al instante (sin cron ni toggle). Usa
+los secrets de Google.
+
 **Function `responder`** (responder desde la app): deployar **CON** Verify JWT.
 Usa el JWT del vendedor para leer su inscripción (RLS) y el service_role para el
 refresh_token; manda la respuesta por Gmail en el mismo hilo. Secrets: los de

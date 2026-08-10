@@ -773,6 +773,14 @@ export async function responderInscripcion(inscripcionId: string, texto: string)
   })
   if (error) throw new Error(await fnMsg(error))
 }
+
+// Fuerza el envío del próximo paso de una inscripción, al instante (para probar).
+export async function enviarAhoraInscripcion(inscripcionId: string): Promise<void> {
+  const { error } = await supabase.functions.invoke("enviar-ahora", {
+    body: { inscripcion_id: inscripcionId },
+  })
+  if (error) throw new Error(await fnMsg(error))
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Secuencias del vendedor + las plantillas compartidas (vendedor_id null).
