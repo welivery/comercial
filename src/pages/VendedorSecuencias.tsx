@@ -7,6 +7,7 @@ import {
   Eye,
   Info,
   Mail,
+  MessageSquare,
   Pause,
   Play,
   Plus,
@@ -756,7 +757,19 @@ export function VendedorSecuencias() {
                     )}
                   >
                     <td className="px-4 py-3">
-                      <div className="text-[13px] font-medium text-ink">{ins.destinatario_nombre || "—"}</div>
+                      {ins.paso_actual > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => abrirResponder(ins)}
+                          title="Ver la conversación completa"
+                          className="inline-flex items-center gap-1.5 text-[13px] font-medium text-ink hover:text-blue hover:underline"
+                        >
+                          {ins.destinatario_nombre || ins.destinatario_email}
+                          <MessageSquare size={12} className="text-blue" />
+                        </button>
+                      ) : (
+                        <div className="text-[13px] font-medium text-ink">{ins.destinatario_nombre || "—"}</div>
+                      )}
                       <div className="text-[11.5px] text-slate">{ins.destinatario_email}</div>
                       {ins.ia_sentimiento && (
                         <div className="mt-1 flex items-start gap-1 text-[11px] text-slate">
@@ -777,24 +790,25 @@ export function VendedorSecuencias() {
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate">{seq?.nombre ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col items-start gap-1">
-                        <span
-                          className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                          style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
-                        >
-                          {INSC_LABEL[ins.estado]}
+                      {ins.pendiente_humano ? (
+                        <span className="rounded-md bg-[#FBE2E2] px-2 py-0.5 text-[11px] font-semibold text-error">
+                          {ins.ia_reunion ? "📅 Confirmó reunión · respondé" : "Respondió · sin responder"}
                         </span>
-                        {ins.ia_reunion && (
-                          <span className="rounded-md bg-[#FBE2E2] px-2 py-0.5 text-[11px] font-semibold text-error">
-                            📅 Confirmó reunión
+                      ) : (
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                            style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
+                          >
+                            {INSC_LABEL[ins.estado]}
                           </span>
-                        )}
-                        {ins.pendiente_humano && !ins.ia_reunion && (
-                          <span className="rounded-md bg-[#EEF3FE] px-2 py-0.5 text-[11px] font-semibold text-blue">
-                            Sin responder
-                          </span>
-                        )}
-                      </div>
+                          {ins.ia_reunion && (
+                            <span className="rounded-md bg-[#FBE2E2] px-2 py-0.5 text-[11px] font-semibold text-error">
+                              📅 Reunión
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       {ins.abierto ? (
