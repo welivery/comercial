@@ -205,6 +205,8 @@ export interface SecuenciaInscripcion {
   ia_sentimiento: IaSentimiento | null
   ia_confianza: number | null
   ia_resumen: string | null
+  respuesta_texto: string | null // lo que escribió el cliente (lo trae el cron)
+  respuesta_at: string | null
   created_at: string
 }
 

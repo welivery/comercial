@@ -759,8 +759,19 @@ function mapInscripcion(r: any): SecuenciaInscripcion {
     ia_sentimiento: (r.ia_sentimiento ?? null) as SecuenciaInscripcion["ia_sentimiento"],
     ia_confianza: r.ia_confianza ?? null,
     ia_resumen: r.ia_resumen ?? null,
+    respuesta_texto: r.respuesta_texto ?? null,
+    respuesta_at: r.respuesta_at ?? null,
     created_at: r.created_at,
   }
+}
+
+// Responder un mail de secuencia desde la app (sale por la casilla del vendedor,
+// en el mismo hilo). Lo hace la Edge Function `responder`.
+export async function responderInscripcion(inscripcionId: string, texto: string): Promise<void> {
+  const { error } = await supabase.functions.invoke("responder", {
+    body: { inscripcion_id: inscripcionId, texto },
+  })
+  if (error) throw new Error(await fnMsg(error))
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

@@ -63,6 +63,13 @@ Correr en este orden si todavía no se corrieron:
 9. `clientes-deuda.sql` — marca de deuda / problema de pago en la base.
 10. `leads-reasignar.sql` — permitir reasignar leads entre vendedores.
 11. `secuencias-pixel.sql` — tracking de apertura (columnas abierto_at / aperturas).
+12. `secuencias-responder.sql` — guardar el texto de la respuesta + responder a mano.
+
+**Function `responder`** (responder desde la app): deployar **CON** Verify JWT.
+Usa el JWT del vendedor para leer su inscripción (RLS) y el service_role para el
+refresh_token; manda la respuesta por Gmail en el mismo hilo. Secrets: los de
+Google (ya cargados). Al detectar una respuesta, el cron guarda el texto en
+`respuesta_texto` para leerlo en la app.
 
 **Function `track`** (pixel de apertura): deployar SIN Verify JWT. Sin secrets
 propios (usa SUPABASE_URL / SERVICE_ROLE inyectados). El cron manda el mail en

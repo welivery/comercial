@@ -10,6 +10,7 @@ import {
   Pause,
   Play,
   Plus,
+  Reply,
   Send,
   ThumbsDown,
   ThumbsUp,
@@ -36,6 +37,7 @@ import {
   guardarPasos,
   inscribir,
   rechazarLead,
+  responderInscripcion,
   type PasoInput,
 } from "@/data/api"
 import { renderPlantilla } from "@/lib/plantillas"
@@ -171,6 +173,13 @@ export function VendedorSecuencias() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewConNombre, setPreviewConNombre] = useState(true)
 
+  // Responder desde la app.
+  const [respIns, setRespIns] = useState<SecuenciaInscripcion | null>(null)
+  const [respTexto, setRespTexto] = useState("")
+  const [respSaving, setRespSaving] = useState(false)
+  const [respErr, setRespErr] = useState<string | null>(null)
+  const [respOk, setRespOk] = useState(false)
+
   // Al elegir una secuencia, carga sus pasos y encabezado.
   useEffect(() => {
     if (!selId) return
@@ -300,6 +309,28 @@ export function VendedorSecuencias() {
       reloadInsc()
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "No se pudo actualizar")
+    }
+  }
+
+  function abrirResponder(ins: SecuenciaInscripcion) {
+    setRespIns(ins)
+    setRespTexto("")
+    setRespErr(null)
+    setRespOk(false)
+  }
+  async function enviarRespuesta(e: React.FormEvent) {
+    e.preventDefault()
+    if (!respIns || !respTexto.trim()) return
+    setRespSaving(true)
+    setRespErr(null)
+    try {
+      await responderInscripcion(respIns.id, respTexto.trim())
+      setRespOk(true)
+      setTimeout(() => setRespIns(null), 1200)
+    } catch (err) {
+      setRespErr(err instanceof Error ? err.message : "No se pudo enviar")
+    } finally {
+      setRespSaving(false)
     }
   }
 
@@ -655,6 +686,11 @@ export function VendedorSecuencias() {
                           </span>
                         </div>
                       )}
+                      {ins.respuesta_texto && (
+                        <div className="mt-1.5 max-w-[380px] whitespace-pre-line rounded-lg border-l-2 border-blue/40 bg-mist/60 px-2.5 py-1.5 text-[11.5px] leading-relaxed text-ink">
+                          <span className="line-clamp-4">{ins.respuesta_texto}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate">{seq?.nombre ?? "—"}</td>
                     <td className="px-4 py-3">
@@ -681,6 +717,9 @@ export function VendedorSecuencias() {
                         {/* Respondió → decidir: oportunidad o rechazo */}
                         {respondio && (
                           <>
+                            <Button size="sm" variant="outline" className="text-blue" onClick={() => abrirResponder(ins)}>
+                              <Reply /> Responder
+                            </Button>
                             {leadConvertible(ins.lead_id) ? (
                               <Button asChild size="sm" variant="blue">
                                 <Link to={`/leads?convertir=${ins.lead_id}`}>
@@ -755,6 +794,44 @@ export function VendedorSecuencias() {
       )}
       </>
       )}
+
+      {/* Responder desde la app */}
+      <Modal open={!!respIns} onClose={() => setRespIns(null)} title="Responder">
+        {respIns && (
+          <form onSubmit={enviarRespuesta} className="flex flex-col gap-3.5">
+            <div className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+              A <b className="text-ink">{respIns.destinatario_nombre || respIns.destinatario_email}</b> ·{" "}
+              {respIns.destinatario_email}. Sale desde tu casilla, en el mismo hilo.
+            </div>
+            {respIns.respuesta_texto && (
+              <div className="max-h-40 overflow-y-auto whitespace-pre-line rounded-lg border-l-2 border-blue/40 bg-mist/50 px-3 py-2 text-[12px] leading-relaxed text-ink">
+                <div className="mb-1 text-[11px] font-semibold text-slate">Lo que respondió:</div>
+                {respIns.respuesta_texto}
+              </div>
+            )}
+            <textarea
+              value={respTexto}
+              onChange={(e) => setRespTexto(e.target.value)}
+              className="inp min-h-[140px] resize-y"
+              placeholder="Escribí tu respuesta…"
+              required
+              autoFocus
+            />
+            {respErr && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{respErr}</div>}
+            {respOk && (
+              <div className="rounded-lg bg-[#E4F5EC] px-3 py-2 text-[12.5px] text-success">¡Respuesta enviada!</div>
+            )}
+            <div className="mt-1 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setRespIns(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="blue" disabled={respSaving || respOk}>
+                <Send /> {respSaving ? "Enviando…" : "Enviar respuesta"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {/* Vista previa de la plantilla con datos de ejemplo */}
       <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Vista previa del mail">
