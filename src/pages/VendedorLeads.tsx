@@ -4,16 +4,12 @@ import {
   Ban,
   Building2,
   Check,
-  Globe,
   Mail,
-  MapPin,
   Phone,
   Plus,
   RefreshCw,
   Send,
   Sparkles,
-  Star,
-  TrendingUp,
   Undo2,
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
@@ -28,16 +24,7 @@ import { generarLeadsIA } from "@/data/leads"
 import { asignarBucket } from "@/lib/buckets"
 import { MOTIVOS_RECHAZO, MOTIVO_RECHAZO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
 import { cn } from "@/lib/utils"
-import type { FuenteLead, Lead, LeadEstado, MotivoRechazo, SecuenciaInscripcion } from "@/lib/types"
-
-const FUENTE_ICON: Record<FuenteLead["tipo"], React.ReactNode> = {
-  maps: <MapPin size={13} />,
-  web: <Globe size={13} />,
-  social: <Star size={13} />,
-  linkedin: <Building2 size={13} />,
-  base: <Check size={13} />,
-  tendencia: <TrendingUp size={13} />,
-}
+import type { Lead, LeadEstado, MotivoRechazo, SecuenciaInscripcion } from "@/lib/types"
 
 const ESTADOS_FILTRO: { k: LeadEstado | "todos"; label: string }[] = [
   { k: "nuevo", label: "Sin clasificar" },
@@ -57,6 +44,21 @@ function cutoff(k: string): number {
   if (k === "30d") return now.getTime() - 30 * 864e5
   if (k === "mes") return new Date(now.getFullYear(), now.getMonth(), 1).getTime()
   return 0
+}
+
+// Fallback: si el email/teléfono no quedó en su campo (leads viejos), lo sacamos
+// del texto del motivo para mostrarlo y poder usarlo igual.
+function extraerEmail(t?: string | null): string | null {
+  const m = (t ?? "").match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)
+  return m ? m[0] : null
+}
+function extraerTel(t?: string | null): string | null {
+  const m = (t ?? "").match(/(\+?56\s?9(?:\s?\d){8}|9\d{8})/)
+  return m ? m[0].trim() : null
+}
+// Motivo sin la cola de contacto (ya vive en columnas propias).
+function motivoCorto(t?: string | null): string {
+  return (t ?? "").split(/·\s*contacto:/i)[0].trim()
 }
 
 interface OpForm {
@@ -80,10 +82,7 @@ export function VendedorLeads() {
   const { data: inscripciones, reload: reloadInsc } = useInscripciones(vendedor.id)
   const leads = useMemo(() => leadsData ?? [], [leadsData])
 
-  // Secuencias activas del vendedor (para el selector del modal).
   const seqActivas = useMemo(() => (secuencias ?? []).filter((s) => s.activo), [secuencias])
-  // Inscripción vigente por lead (para el chip "En secuencia"). La lista viene
-  // ordenada por fecha desc → nos quedamos con la más reciente de cada lead.
   const inscByLead = useMemo(() => {
     const m = new Map<string, SecuenciaInscripcion>()
     for (const i of inscripciones ?? []) {
@@ -92,12 +91,11 @@ export function VendedorLeads() {
     return m
   }, [inscripciones])
 
-  // Cupo diario configurado en Objetivos para este vendedor.
+  const emailDe = (l: Lead) => l.email ?? extraerEmail(l.motivo)
+  const telDe = (l: Lead) => l.telefono ?? extraerTel(l.motivo)
+
   const cupoDiario = objetivos?.find((o) => o.vendedor_id === vendedor.id)?.leads_cupo_diario ?? 0
 
-  // Auto-carga diaria: al entrar, si el vendedor todavía no recibió su cupo de
-  // hoy, se le suman leads de su base (gratis). Solo para el vendedor logueado
-  // (no cuando el admin previsualiza), y una vez por carga de página.
   const autoRef = useRef(false)
   useEffect(() => {
     if (rol !== "vendedor" || !vendedor.id || cupoDiario <= 0 || loading) return
@@ -122,6 +120,10 @@ export function VendedorLeads() {
   const [estadoFiltro, setEstadoFiltro] = useState<LeadEstado | "todos">("nuevo")
   const [periodo, setPeriodo] = useState("todo")
 
+  // Selección múltiple (para inscribir en lote).
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  useEffect(() => setSel(new Set()), [estadoFiltro, periodo])
+
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
 
@@ -130,12 +132,18 @@ export function VendedorLeads() {
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
 
-  // Modal "Poner en secuencia".
+  // Modal "Poner en secuencia" (individual).
   const [seqLead, setSeqLead] = useState<Lead | null>(null)
   const [seqId, setSeqId] = useState("")
   const [seqEmail, setSeqEmail] = useState("")
   const [seqSaving, setSeqSaving] = useState(false)
   const [seqErr, setSeqErr] = useState<string | null>(null)
+
+  // Modal "Poner en secuencia" (lote).
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkSeqId, setBulkSeqId] = useState("")
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkErr, setBulkErr] = useState<string | null>(null)
 
   const sinVendedor = !vendedor.id
   const vivoRef = useRef(true)
@@ -145,7 +153,6 @@ export function VendedorLeads() {
   const restantes = Math.max(0, limite - usados)
   const sinCreditos = limite > 0 && restantes <= 0
 
-  // KPIs + lista filtrados por período y estado.
   const { kpi, visibles } = useMemo(() => {
     const desde = cutoff(periodo)
     const enRango = leads.filter((l) => !desde || new Date(l.created_at).getTime() >= desde)
@@ -161,6 +168,20 @@ export function VendedorLeads() {
     }
   }, [leads, periodo, estadoFiltro])
 
+  // Solo los "nuevo" son seleccionables (son los que se pueden inscribir).
+  const seleccionables = useMemo(() => visibles.filter((l) => l.estado === "nuevo"), [visibles])
+  const allSel = seleccionables.length > 0 && seleccionables.every((l) => sel.has(l.id))
+  function toggleAll() {
+    setSel(allSel ? new Set() : new Set(seleccionables.map((l) => l.id)))
+  }
+  function toggleOne(id: string) {
+    setSel((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+
   useEffect(() => {
     vivoRef.current = true
     return () => {
@@ -168,8 +189,6 @@ export function VendedorLeads() {
     }
   }, [])
 
-  // Si venimos de Secuencias con ?convertir=<leadId>, abrimos el modal de
-  // "pasar a oportunidad" para ese lead (y limpiamos el parámetro).
   const [searchParams, setSearchParams] = useSearchParams()
   const convParam = searchParams.get("convertir")
   useEffect(() => {
@@ -232,9 +251,10 @@ export function VendedorLeads() {
     }
   }
 
-  async function confirmarRechazo(l: Lead) {
+  async function confirmarRechazo() {
+    if (!rechId) return
     try {
-      await rechazarLead(l.id, rechMotivo)
+      await rechazarLead(rechId, rechMotivo)
       setRechId(null)
       reload()
     } catch (e) {
@@ -254,7 +274,7 @@ export function VendedorLeads() {
   function abrirSecuencia(l: Lead) {
     setSeqLead(l)
     setSeqId(seqActivas[0]?.id ?? "")
-    setSeqEmail(l.email ?? "")
+    setSeqEmail(emailDe(l) ?? "")
     setSeqErr(null)
   }
 
@@ -290,6 +310,55 @@ export function VendedorLeads() {
     }
   }
 
+  function abrirBulk() {
+    setBulkSeqId(seqActivas[0]?.id ?? "")
+    setBulkErr(null)
+    setBulkOpen(true)
+  }
+
+  async function confirmarBulk(e: React.FormEvent) {
+    e.preventDefault()
+    if (!bulkSeqId) {
+      setBulkErr("Elegí una secuencia.")
+      return
+    }
+    const elegidos = visibles.filter((l) => sel.has(l.id) && l.estado === "nuevo")
+    const conEmail = elegidos.filter((l) => !!emailDe(l) && !inscByLead.get(l.id))
+    const afuera = elegidos.length - conEmail.length
+    if (conEmail.length === 0) {
+      setBulkErr("Ninguno de los seleccionados tiene email (o ya están en una secuencia).")
+      return
+    }
+    setBulkSaving(true)
+    setBulkErr(null)
+    let ok = 0
+    for (const l of conEmail) {
+      try {
+        await inscribir({
+          secuencia_id: bulkSeqId,
+          vendedor_id: vendedor.id,
+          lead_id: l.id,
+          destinatario_nombre: l.nombre,
+          destinatario_email: emailDe(l)!,
+        })
+        ok++
+      } catch {
+        /* seguimos con el resto */
+      }
+    }
+    setBulkSaving(false)
+    setBulkOpen(false)
+    setSel(new Set())
+    reloadInsc()
+    setAviso({
+      tipo: ok > 0 ? "ok" : "error",
+      texto:
+        `${ok} lead${ok === 1 ? "" : "s"} puesto${ok === 1 ? "" : "s"} en la secuencia` +
+        (afuera > 0 ? ` · ${afuera} sin email quedaron afuera` : "") +
+        ".",
+    })
+  }
+
   function abrirConvertir(l: Lead) {
     setConvLead(l)
     setErrForm(null)
@@ -299,7 +368,7 @@ export function VendedorLeads() {
       envios_aprox: 0,
       lugar_retiro: "",
       tipo_producto: "",
-      interes: (l.motivo ?? "").slice(0, 140),
+      interes: motivoCorto(l.motivo).slice(0, 140),
       nota: "",
       marca_reconocida: l.bucket === "estrategico",
       quiere_fulfillment: l.bucket === "fulfillment",
@@ -312,18 +381,22 @@ export function VendedorLeads() {
     setGuardando(true)
     setErrForm(null)
     try {
-      await convertirLead(convLead.id, {
-        vendedor_id: vendedor.id,
-        ecommerce: form.ecommerce,
-        sitio: form.sitio || null,
-        envios_aprox: form.envios_aprox,
-        lugar_retiro: form.lugar_retiro,
-        tipo_producto: form.tipo_producto,
-        interes: form.interes || null,
-        marca_reconocida: form.marca_reconocida,
-        quiere_fulfillment: form.quiere_fulfillment,
-        origen: "ia",
-      }, form.nota)
+      await convertirLead(
+        convLead.id,
+        {
+          vendedor_id: vendedor.id,
+          ecommerce: form.ecommerce,
+          sitio: form.sitio || null,
+          envios_aprox: form.envios_aprox,
+          lugar_retiro: form.lugar_retiro,
+          tipo_producto: form.tipo_producto,
+          interes: form.interes || null,
+          marca_reconocida: form.marca_reconocida,
+          quiere_fulfillment: form.quiere_fulfillment,
+          origen: "ia",
+        },
+        form.nota
+      )
       setConvLead(null)
       reload()
     } catch (err) {
@@ -481,7 +554,22 @@ export function VendedorLeads() {
             </select>
           </div>
 
-          {/* Lista */}
+          {/* Barra de selección múltiple */}
+          {sel.size > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-blue/25 bg-[#EEF3FE] px-3.5 py-2.5">
+              <span className="text-[12.5px] font-semibold text-blue">
+                {sel.size} seleccionado{sel.size === 1 ? "" : "s"}
+              </span>
+              <Button size="sm" variant="blue" onClick={abrirBulk}>
+                <Send /> Poner en secuencia
+              </Button>
+              <button onClick={() => setSel(new Set())} className="text-[12px] font-medium text-slate hover:text-ink">
+                Limpiar
+              </button>
+            </div>
+          )}
+
+          {/* Tabla */}
           {visibles.length === 0 ? (
             <Card className="mt-3 flex flex-col items-center p-8 text-center">
               <span className="grid size-11 place-items-center rounded-xl bg-mist">
@@ -497,175 +585,178 @@ export function VendedorLeads() {
               </p>
             </Card>
           ) : (
-            <div className="mt-3 grid gap-3">
-              {visibles.map((l) => (
-                <Card key={l.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:gap-3.5">
-                  <span
-                    className={cn(
-                      "grid size-[42px] shrink-0 place-items-center rounded-[10px] text-[15px] font-semibold",
-                      l.estado === "rechazado"
-                        ? "bg-mist text-muted"
-                        : l.reconquista
-                          ? "bg-[#FBEFD4] text-[#a5741a]"
-                          : "bg-mist text-navy"
-                    )}
-                  >
-                    {l.iniciales}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="flex flex-wrap items-center gap-2 text-[14px] font-semibold text-ink">
-                      <span className={l.estado === "rechazado" ? "text-slate line-through" : undefined}>{l.nombre}</span>
-                      <BucketChip bucket={l.bucket} />
-                      {l.estado === "convertido" && (
-                        <span className="rounded-full bg-[#DFF2E9] px-2 py-0.5 text-[11px] font-semibold text-success">
-                          A oportunidad
-                        </span>
+            <Card className="mt-3 overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
+                    <th className="w-10 px-4 py-2.5">
+                      {seleccionables.length > 0 && (
+                        <input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Seleccionar todos" />
                       )}
-                      {l.estado === "rechazado" && (
-                        <span className="rounded-full bg-mist px-2 py-0.5 text-[11px] font-semibold text-slate">
-                          Rechazado{l.motivo_rechazo ? ` · ${MOTIVO_RECHAZO_LABEL[l.motivo_rechazo]}` : ""}
-                        </span>
-                      )}
-                      {l.estado === "nuevo" &&
-                        (l.reconquista ? (
-                          <span className="rounded-full bg-[#FBEFD4] px-2 py-0.5 text-[11px] font-semibold text-[#a5741a]">
-                            Ex-cliente · reconquista
-                          </span>
-                        ) : (
-                          <span className="rounded-full bg-[#DFF2E9] px-2 py-0.5 text-[11px] font-semibold text-success">
-                            {l.fit}% fit
-                          </span>
-                        ))}
-                      {(() => {
-                        const insc = inscByLead.get(l.id)
-                        if (!insc) return null
-                        if (insc.estado === "respondio")
-                          return (
-                            <span className="rounded-full bg-[#DFF2E9] px-2 py-0.5 text-[11px] font-semibold text-success">
-                              Respondió 🎯
+                    </th>
+                    <th className="px-2 py-2.5 font-medium">Empresa</th>
+                    <th className="px-4 py-2.5 font-medium">Email</th>
+                    <th className="px-4 py-2.5 font-medium">Teléfono</th>
+                    <th className="px-4 py-2.5 font-medium">Origen</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibles.map((l) => {
+                    const insc = inscByLead.get(l.id)
+                    const email = emailDe(l)
+                    const tel = telDe(l)
+                    return (
+                      <tr key={l.id} className={cn("border-t border-border hover:bg-mist/40", sel.has(l.id) && "bg-[#EEF3FE]/60")}>
+                        <td className="px-4 py-3 align-top">
+                          {l.estado === "nuevo" && (
+                            <input
+                              type="checkbox"
+                              checked={sel.has(l.id)}
+                              onChange={() => toggleOne(l.id)}
+                              aria-label={`Seleccionar ${l.nombre}`}
+                            />
+                          )}
+                        </td>
+                        <td className="px-2 py-3 align-top">
+                          <div className="flex items-start gap-2.5">
+                            <span
+                              className={cn(
+                                "grid size-8 shrink-0 place-items-center rounded-[8px] text-[12px] font-semibold",
+                                l.estado === "rechazado"
+                                  ? "bg-mist text-muted"
+                                  : l.reconquista
+                                    ? "bg-[#FBEFD4] text-[#a5741a]"
+                                    : "bg-mist text-navy"
+                              )}
+                            >
+                              {l.iniciales}
                             </span>
-                          )
-                        if (insc.estado === "terminada" || insc.estado === "rebotada") return null
-                        return (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF3FE] px-2 py-0.5 text-[11px] font-semibold text-blue">
-                            <Send size={11} />
-                            {insc.estado === "pausada" ? "Secuencia pausada" : "En secuencia"}
-                          </span>
-                        )
-                      })()}
-                    </h4>
-                    <p className="mt-1.5 text-[12.5px] leading-relaxed text-slate">{l.motivo}</p>
-
-                    {(l.web || l.telefono || l.email) && (
-                      <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px]">
-                        {l.web && (
-                          <a href={l.web} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-medium text-blue hover:underline">
-                            <Globe size={13} /> {l.web.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
-                          </a>
-                        )}
-                        {l.telefono && (
-                          <a href={`tel:${l.telefono.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline">
-                            <Phone size={13} /> {l.telefono}
-                          </a>
-                        )}
-                        {l.email && (
-                          <a href={`mailto:${l.email}`} className="inline-flex items-center gap-1.5 font-medium text-ink hover:underline">
-                            <Mail size={13} /> {l.email}
-                          </a>
-                        )}
-                      </div>
-                    )}
-
-                    {l.fuentes.length > 0 && (
-                      <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1.5 text-[11.5px] text-muted">
-                        {l.fuentes.map((f, i) =>
-                          f.url ? (
-                            <a key={i} href={f.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-blue hover:underline">
-                              {FUENTE_ICON[f.tipo]}
-                              {f.detalle}
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={cn(
+                                    "text-[13px] font-semibold text-ink",
+                                    l.estado === "rechazado" && "text-slate line-through"
+                                  )}
+                                >
+                                  {l.nombre}
+                                </span>
+                                <BucketChip bucket={l.bucket} short />
+                                {l.estado === "nuevo" &&
+                                  (l.reconquista ? (
+                                    <span className="rounded-full bg-[#FBEFD4] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#a5741a]">
+                                      Reconquista
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full bg-[#DFF2E9] px-1.5 py-0.5 text-[10.5px] font-semibold text-success">
+                                      {l.fit}% fit
+                                    </span>
+                                  ))}
+                                {l.estado === "rechazado" && l.motivo_rechazo && (
+                                  <span className="rounded-full bg-mist px-1.5 py-0.5 text-[10.5px] font-semibold text-slate">
+                                    {MOTIVO_RECHAZO_LABEL[l.motivo_rechazo]}
+                                  </span>
+                                )}
+                                {insc &&
+                                  insc.estado !== "terminada" &&
+                                  insc.estado !== "rebotada" &&
+                                  (insc.estado === "respondio" ? (
+                                    <span className="rounded-full bg-[#DFF2E9] px-1.5 py-0.5 text-[10.5px] font-semibold text-success">
+                                      Respondió 🎯
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF3FE] px-1.5 py-0.5 text-[10.5px] font-semibold text-blue">
+                                      <Send size={10} />
+                                      {insc.estado === "pausada" ? "Pausada" : "En secuencia"}
+                                    </span>
+                                  ))}
+                              </div>
+                              {motivoCorto(l.motivo) && (
+                                <div className="mt-0.5 max-w-[380px] truncate text-[11.5px] text-slate">
+                                  {motivoCorto(l.motivo)}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 align-top text-[12.5px]">
+                          {email ? (
+                            <a href={`mailto:${email}`} className="inline-flex items-center gap-1.5 text-blue hover:underline">
+                              <Mail size={13} className="shrink-0" /> {email}
                             </a>
                           ) : (
-                            <span key={i} className="inline-flex items-center gap-1.5">
-                              {FUENTE_ICON[f.tipo]}
-                              {f.detalle}
-                            </span>
-                          )
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Acciones según estado */}
-                  <div className="flex shrink-0 flex-col justify-center gap-2 sm:w-[190px]">
-                    {l.estado === "convertido" ? (
-                      l.oportunidad_id ? (
-                        <Button asChild variant="outline" size="sm" className="text-success">
-                          <Link to={`/pipeline/${l.oportunidad_id}`}>
-                            <Check /> Ver en pipeline
-                          </Link>
-                        </Button>
-                      ) : (
-                        <span className="text-center text-[12px] text-success">En pipeline</span>
-                      )
-                    ) : l.estado === "rechazado" ? (
-                      <Button variant="outline" size="sm" onClick={() => deshacerRechazo(l)}>
-                        <Undo2 /> Reactivar
-                      </Button>
-                    ) : rechId === l.id ? (
-                      <div className="rounded-lg border border-input p-2.5">
-                        <label className="mb-1 block text-[11px] font-medium text-slate">Motivo del rechazo</label>
-                        <select
-                          value={rechMotivo}
-                          onChange={(e) => setRechMotivo(e.target.value as MotivoRechazo)}
-                          className="mb-2 w-full rounded-md border border-input bg-white px-2 py-1.5 text-[12.5px] text-ink outline-none focus:border-blue"
-                        >
-                          {MOTIVOS_RECHAZO.map((m) => (
-                            <option key={m.key} value={m.key}>
-                              {m.label}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="flex gap-2">
-                          <Button size="sm" variant="blue" className="flex-1" onClick={() => confirmarRechazo(l)}>
-                            Confirmar
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => setRechId(null)}>
-                            Cancelar
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <Button variant="blue" size="sm" onClick={() => abrirConvertir(l)}>
-                          <Plus /> Pasar a oportunidad
-                        </Button>
-                        {inscByLead.get(l.id) ? (
-                          <Button asChild variant="outline" size="sm">
-                            <Link to="/secuencias">
-                              <Send /> Ver secuencia
-                            </Link>
-                          </Button>
-                        ) : (
-                          <Button variant="outline" size="sm" onClick={() => abrirSecuencia(l)}>
-                            <Send /> Poner en secuencia
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setRechId(l.id)
-                            setRechMotivo("no_interesado")
-                          }}
-                        >
-                          <Ban /> Rechazar
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </Card>
-              ))}
-            </div>
+                            <span className="text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top text-[12.5px]">
+                          {tel ? (
+                            <a href={`tel:${tel.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-ink hover:underline">
+                              <Phone size={13} className="shrink-0" /> {tel}
+                            </a>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top text-[12px] text-slate">
+                          {l.fuentes[0]?.detalle ?? (l.origen === "ia" ? "IA" : "Base")}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="flex items-center justify-end gap-1">
+                            {l.estado === "convertido" ? (
+                              l.oportunidad_id ? (
+                                <Link
+                                  to={`/pipeline/${l.oportunidad_id}`}
+                                  title="Ver en pipeline"
+                                  className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[12px] font-medium text-success hover:bg-mist"
+                                >
+                                  <Check size={15} /> Pipeline
+                                </Link>
+                              ) : (
+                                <span className="text-[12px] text-success">En pipeline</span>
+                              )
+                            ) : l.estado === "rechazado" ? (
+                              <IconBtn title="Reactivar" onClick={() => deshacerRechazo(l)}>
+                                <Undo2 size={15} />
+                              </IconBtn>
+                            ) : (
+                              <>
+                                <IconBtn title="Pasar a oportunidad" tone="blue" onClick={() => abrirConvertir(l)}>
+                                  <Plus size={15} />
+                                </IconBtn>
+                                {insc ? (
+                                  <Link
+                                    to="/secuencias"
+                                    title="Ver en secuencias"
+                                    className="grid size-8 place-items-center rounded-md text-blue hover:bg-mist"
+                                  >
+                                    <Send size={15} />
+                                  </Link>
+                                ) : (
+                                  <IconBtn title="Poner en secuencia" onClick={() => abrirSecuencia(l)}>
+                                    <Send size={15} />
+                                  </IconBtn>
+                                )}
+                                <IconBtn
+                                  title="Rechazar"
+                                  tone="error"
+                                  onClick={() => {
+                                    setRechId(l.id)
+                                    setRechMotivo("no_interesado")
+                                  }}
+                                >
+                                  <Ban size={15} />
+                                </IconBtn>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </Card>
           )}
         </>
       )}
@@ -743,7 +834,35 @@ export function VendedorLeads() {
         )}
       </Modal>
 
-      {/* Modal: poner en secuencia */}
+      {/* Modal: rechazar */}
+      <Modal open={!!rechId} onClose={() => setRechId(null)} title="Rechazar lead">
+        <div className="flex flex-col gap-3.5">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Motivo del rechazo</span>
+            <select
+              value={rechMotivo}
+              onChange={(e) => setRechMotivo(e.target.value as MotivoRechazo)}
+              className="inp"
+            >
+              {MOTIVOS_RECHAZO.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setRechId(null)}>
+              Cancelar
+            </Button>
+            <Button variant="blue" onClick={confirmarRechazo}>
+              Rechazar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal: poner en secuencia (individual) */}
       <Modal open={!!seqLead} onClose={() => setSeqLead(null)} title="Poner lead en una secuencia">
         {seqLead && (
           <form onSubmit={confirmarSecuencia} className="flex flex-col gap-3.5">
@@ -781,7 +900,7 @@ export function VendedorLeads() {
                     placeholder="contacto@empresa.cl"
                     required
                   />
-                  {!seqLead.email && (
+                  {!emailDe(seqLead) && (
                     <span className="text-[11.5px] text-warning">
                       Este lead no tenía email cargado. Completalo para poder enviarle.
                     </span>
@@ -804,8 +923,78 @@ export function VendedorLeads() {
         )}
       </Modal>
 
+      {/* Modal: poner en secuencia (lote) */}
+      <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title={`Poner ${sel.size} lead${sel.size === 1 ? "" : "s"} en una secuencia`}>
+        <form onSubmit={confirmarBulk} className="flex flex-col gap-3.5">
+          {seqActivas.length === 0 ? (
+            <div className="rounded-lg bg-mist/70 px-3 py-3 text-[12.5px] text-slate">
+              Todavía no tenés secuencias activas. Creá una en{" "}
+              <Link to="/secuencias" className="font-medium text-blue underline">
+                Secuencias de email
+              </Link>{" "}
+              y volvé.
+            </div>
+          ) : (
+            <>
+              <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+                Se inscriben los seleccionados que tengan email y no estén ya en una secuencia. Se usa el email de cada
+                lead.
+              </p>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-medium text-slate">Secuencia</span>
+                <select value={bulkSeqId} onChange={(e) => setBulkSeqId(e.target.value)} className="inp" required>
+                  {seqActivas.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nombre}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {bulkErr && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{bulkErr}</div>}
+            </>
+          )}
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setBulkOpen(false)}>
+              {seqActivas.length === 0 ? "Cerrar" : "Cancelar"}
+            </Button>
+            {seqActivas.length > 0 && (
+              <Button type="submit" variant="blue" disabled={bulkSaving}>
+                {bulkSaving ? "Poniendo…" : "Poner en secuencia"}
+              </Button>
+            )}
+          </div>
+        </form>
+      </Modal>
+
       <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>
     </>
+  )
+}
+
+function IconBtn({
+  title,
+  onClick,
+  tone,
+  children,
+}: {
+  title: string
+  onClick: () => void
+  tone?: "blue" | "error"
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "grid size-8 place-items-center rounded-md text-slate hover:bg-mist",
+        tone === "blue" && "text-blue hover:bg-[#EEF3FE]",
+        tone === "error" && "hover:bg-[#FBE2E2] hover:text-error"
+      )}
+    >
+      {children}
+    </button>
   )
 }
 

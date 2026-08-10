@@ -28,6 +28,8 @@ where contacto is null and nota ~* 'contacto:';
 -- Los leads de origen 'base' se identifican con `clave` = nombre normalizado del
 -- cliente (minúsculas, sin acentos, no-alfanum → '-'). Igualamos esa clave para
 -- copiar el email/teléfono a los leads que ya existían antes de esta migración.
+-- Nota: lower() ANTES de translate para que las mayúsculas con tilde (ej. "CAFÉ")
+-- se normalicen igual que en el front (claveLead).
 update leads l
 set email    = coalesce(l.email, c.email),
     telefono = coalesce(l.telefono, c.telefono)
@@ -36,5 +38,5 @@ where l.origen = 'base'
   and (l.email is null or l.telefono is null)
   and (c.email is not null or c.telefono is not null)
   and l.clave = regexp_replace(
-        regexp_replace(lower(translate(c.nombre, 'áéíóúüñ', 'aeiouun')), '[^a-z0-9]+', '-', 'g'),
+        regexp_replace(translate(lower(c.nombre), 'áéíóúüñ', 'aeiouun'), '[^a-z0-9]+', '-', 'g'),
         '(^-|-$)', '', 'g');
