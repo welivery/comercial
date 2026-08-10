@@ -825,6 +825,24 @@ export async function responderInscripcion(inscripcionId: string, texto: string)
   if (error) throw new Error(await fnMsg(error))
 }
 
+// Trae la conversación completa (hilo de Gmail) de una inscripción, para leerla
+// antes de responder.
+export interface HiloMensaje {
+  de: "yo" | "cliente"
+  nombre: string
+  fecha: string
+  texto: string
+}
+export async function fetchHilo(inscripcionId: string): Promise<HiloMensaje[]> {
+  const { data, error } = await supabase.functions.invoke("hilo", {
+    body: { inscripcion_id: inscripcionId },
+  })
+  if (error) throw new Error(await fnMsg(error))
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return ((data as any)?.mensajes ?? []) as HiloMensaje[]
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
 // Fuerza el envío del próximo paso de una inscripción, al instante (para probar).
 export async function enviarAhoraInscripcion(inscripcionId: string): Promise<void> {
   const { error } = await supabase.functions.invoke("enviar-ahora", {

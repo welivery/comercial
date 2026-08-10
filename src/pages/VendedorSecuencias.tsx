@@ -37,10 +37,12 @@ import {
   fetchPasos,
   guardarPasos,
   enviarAhoraInscripcion,
+  fetchHilo,
   inscribir,
   pasarContactoAOportunidad,
   rechazarLead,
   responderInscripcion,
+  type HiloMensaje,
   type PasoInput,
 } from "@/data/api"
 import { renderPlantilla } from "@/lib/plantillas"
@@ -189,12 +191,14 @@ export function VendedorSecuencias() {
   const [oppSaving, setOppSaving] = useState(false)
   const [oppErr, setOppErr] = useState<string | null>(null)
 
-  // Responder desde la app.
+  // Responder desde la app (con la conversación completa cargada).
   const [respIns, setRespIns] = useState<SecuenciaInscripcion | null>(null)
   const [respTexto, setRespTexto] = useState("")
   const [respSaving, setRespSaving] = useState(false)
   const [respErr, setRespErr] = useState<string | null>(null)
   const [respOk, setRespOk] = useState(false)
+  const [hilo, setHilo] = useState<HiloMensaje[]>([])
+  const [hiloLoading, setHiloLoading] = useState(false)
 
   // Al elegir una secuencia, carga sus pasos y encabezado.
   useEffect(() => {
@@ -376,6 +380,12 @@ export function VendedorSecuencias() {
     setRespTexto("")
     setRespErr(null)
     setRespOk(false)
+    setHilo([])
+    setHiloLoading(true)
+    fetchHilo(ins.id)
+      .then(setHilo)
+      .catch(() => setHilo([]))
+      .finally(() => setHiloLoading(false))
   }
   async function enviarRespuesta(e: React.FormEvent) {
     e.preventDefault()
@@ -942,25 +952,62 @@ export function VendedorSecuencias() {
         )}
       </Modal>
 
-      {/* Responder desde la app */}
-      <Modal open={!!respIns} onClose={() => setRespIns(null)} title="Responder">
+      {/* Conversación completa + responder */}
+      <Modal open={!!respIns} onClose={() => setRespIns(null)} title="Conversación">
         {respIns && (
           <form onSubmit={enviarRespuesta} className="flex flex-col gap-3.5">
             <div className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
-              A <b className="text-ink">{respIns.destinatario_nombre || respIns.destinatario_email}</b> ·{" "}
-              {respIns.destinatario_email}. Sale desde tu casilla, en el mismo hilo.
+              Con <b className="text-ink">{respIns.destinatario_nombre || respIns.destinatario_email}</b> ·{" "}
+              {respIns.destinatario_email}
             </div>
-            {respIns.respuesta_texto && (
-              <div className="max-h-40 overflow-y-auto whitespace-pre-line rounded-lg border-l-2 border-blue/40 bg-mist/50 px-3 py-2 text-[12px] leading-relaxed text-ink">
-                <div className="mb-1 text-[11px] font-semibold text-slate">Lo que respondió:</div>
-                {respIns.respuesta_texto}
-              </div>
-            )}
+
+            {/* Hilo completo — el último mensaje queda abajo, a la vista */}
+            <div className="max-h-[300px] overflow-y-auto rounded-lg border border-border bg-mist/30 p-2.5">
+              {hiloLoading ? (
+                <p className="p-2 text-[12.5px] text-slate">Cargando la conversación…</p>
+              ) : hilo.length === 0 ? (
+                <p className="p-2 text-[12.5px] text-slate">
+                  {respIns.respuesta_texto || "Todavía no hay mensajes en el hilo."}
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {hilo.map((m, i) => {
+                    const ultimoCliente = m.de === "cliente" && i === hilo.length - 1
+                    return (
+                      <div key={i} className={cn("flex", m.de === "yo" ? "justify-end" : "justify-start")}>
+                        <div
+                          className={cn(
+                            "max-w-[85%] whitespace-pre-line rounded-xl px-3 py-2 text-[12.5px] leading-relaxed",
+                            m.de === "yo"
+                              ? "bg-blue text-white"
+                              : ultimoCliente
+                                ? "bg-white text-ink ring-2 ring-error/50"
+                                : "bg-white text-ink"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "mb-0.5 text-[10.5px] font-semibold",
+                              m.de === "yo" ? "text-white/80" : "text-slate"
+                            )}
+                          >
+                            {m.de === "yo" ? "Vos" : m.nombre}
+                            {ultimoCliente && <span className="text-error"> · última respuesta</span>}
+                          </div>
+                          {m.texto || "(sin texto)"}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
             <textarea
               value={respTexto}
               onChange={(e) => setRespTexto(e.target.value)}
-              className="inp min-h-[140px] resize-y"
-              placeholder="Escribí tu respuesta…"
+              className="inp min-h-[110px] resize-y"
+              placeholder="Escribí tu respuesta… (sale desde tu casilla, en este hilo)"
               required
               autoFocus
             />
