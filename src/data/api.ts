@@ -808,8 +808,10 @@ function mapInscripcion(r: any): SecuenciaInscripcion {
     ia_sentimiento: (r.ia_sentimiento ?? null) as SecuenciaInscripcion["ia_sentimiento"],
     ia_confianza: r.ia_confianza ?? null,
     ia_resumen: r.ia_resumen ?? null,
+    ia_reunion: !!r.ia_reunion,
     respuesta_texto: r.respuesta_texto ?? null,
     respuesta_at: r.respuesta_at ?? null,
+    pendiente_humano: !!r.pendiente_humano,
     created_at: r.created_at,
   }
 }

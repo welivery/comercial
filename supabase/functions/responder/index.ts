@@ -127,10 +127,11 @@ Deno.serve(async (req) => {
     const sj = await send.json()
     if (!send.ok) return json(502, { error: `Gmail rechazó el envío: ${JSON.stringify(sj).slice(0, 200)}` })
 
-    // Registro liviano de que se respondió a mano.
+    // El vendedor respondió → deja de estar pendiente (hasta que el cliente
+    // vuelva a escribir, que lo re-marca pendiente).
     await admin
       .from("secuencia_inscripciones")
-      .update({ ultima_respuesta_manual_at: new Date().toISOString() })
+      .update({ ultima_respuesta_manual_at: new Date().toISOString(), pendiente_humano: false })
       .eq("id", ins.id)
 
     return json(200, { ok: true })

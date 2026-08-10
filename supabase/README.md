@@ -64,6 +64,12 @@ Correr en este orden si todavía no se corrieron:
 10. `leads-reasignar.sql` — permitir reasignar leads entre vendedores.
 11. `secuencias-pixel.sql` — tracking de apertura (columnas abierto_at / aperturas).
 12. `secuencias-responder.sql` — guardar el texto de la respuesta + responder a mano.
+13. `secuencias-seguimiento.sql` — seguimiento infalible: pendiente_humano + ia_reunion.
+
+El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
+del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se
+destaca arriba) y la IA marca `ia_reunion` si propone/acepta reunión. Se limpia
+cuando el vendedor responde desde la app.
 
 **Function `enviar-ahora`** (forzar envío para probar): deployar **CON** Verify JWT.
 Manda el próximo paso de una inscripción al instante (sin cron ni toggle). Usa

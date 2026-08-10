@@ -205,8 +205,10 @@ export interface SecuenciaInscripcion {
   ia_sentimiento: IaSentimiento | null
   ia_confianza: number | null
   ia_resumen: string | null
+  ia_reunion: boolean // la IA detectó que propone/acepta reunión u horario
   respuesta_texto: string | null // lo que escribió el cliente (lo trae el cron)
   respuesta_at: string | null
+  pendiente_humano: boolean // hay un mensaje del cliente sin responder
   created_at: string
 }
 

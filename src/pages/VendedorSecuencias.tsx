@@ -296,10 +296,12 @@ export function VendedorSecuencias() {
 
   // ── Cierre del círculo desde la respuesta ──────────────────────────────────
   // Las que respondieron van primero (esperan acción del vendedor).
-  const respondieron = useMemo(() => inscripciones.filter((i) => i.estado === "respondio").length, [inscripciones])
+  const pendientes = useMemo(() => inscripciones.filter((i) => i.pendiente_humano).length, [inscripciones])
   const inscOrdenadas = useMemo(() => {
-    const rank = (e: InscripcionEstado) => (e === "respondio" ? 0 : e === "activa" ? 1 : e === "pausada" ? 2 : 3)
-    return [...inscripciones].sort((a, b) => rank(a.estado) - rank(b.estado))
+    // Los pendientes (mensaje del cliente sin responder) van SIEMPRE primero.
+    const rank = (i: SecuenciaInscripcion) =>
+      i.pendiente_humano ? 0 : i.estado === "respondio" ? 1 : i.estado === "activa" ? 2 : i.estado === "pausada" ? 3 : 4
+    return [...inscripciones].sort((a, b) => rank(a) - rank(b))
   }, [inscripciones])
   async function noInteresado(ins: SecuenciaInscripcion) {
     if (
@@ -335,7 +337,7 @@ export function VendedorSecuencias() {
   function abrirOportunidad(ins: SecuenciaInscripcion) {
     setOppIns(ins)
     setOppEmpresa(ins.destinatario_empresa || ins.destinatario_nombre || "")
-    setOppEstado("interesado")
+    setOppEstado(ins.ia_reunion ? "reunion_coordinada" : "interesado")
     setOppEnvios(0)
     setOppInteres(ins.ia_resumen || (ins.respuesta_texto ?? "").slice(0, 160))
     setOppMarca(false)
@@ -706,10 +708,10 @@ export function VendedorSecuencias() {
       </div>
       <div className="mb-3 mt-5 flex flex-wrap items-center gap-3">
         <h2 className="text-[15px] font-semibold text-navy">Contactos en secuencia</h2>
-        {respondieron > 0 && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#DFF2E9] px-2.5 py-1 text-[11.5px] font-semibold text-success">
+        {pendientes > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#FBE2E2] px-2.5 py-1 text-[11.5px] font-semibold text-error">
             <ThumbsUp size={12} />
-            {respondieron} respondi{respondieron === 1 ? "ó" : "eron"} · esperan tu decisión
+            {pendientes} sin responder · esperan tu respuesta
           </span>
         )}
       </div>
@@ -736,7 +738,13 @@ export function VendedorSecuencias() {
                 const respondio = ins.estado === "respondio"
                 const enCurso = ins.estado === "activa" || ins.estado === "pausada"
                 return (
-                  <tr key={ins.id} className={cn("border-t border-border", respondio && "bg-[#EEF3FE]")}>
+                  <tr
+                    key={ins.id}
+                    className={cn(
+                      "border-t border-border",
+                      ins.pendiente_humano && (ins.ia_reunion ? "bg-[#FDECE9]" : "bg-[#EEF3FE]")
+                    )}
+                  >
                     <td className="px-4 py-3">
                       <div className="text-[13px] font-medium text-ink">{ins.destinatario_nombre || "—"}</div>
                       <div className="text-[11.5px] text-slate">{ins.destinatario_email}</div>
@@ -759,12 +767,24 @@ export function VendedorSecuencias() {
                     </td>
                     <td className="px-4 py-3 text-[12.5px] text-slate">{seq?.nombre ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <span
-                        className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
-                        style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
-                      >
-                        {INSC_LABEL[ins.estado]}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span
+                          className="rounded-md px-2 py-0.5 text-[11px] font-semibold"
+                          style={{ background: INSC_COLOR[ins.estado] + "1F", color: INSC_COLOR[ins.estado] }}
+                        >
+                          {INSC_LABEL[ins.estado]}
+                        </span>
+                        {ins.ia_reunion && (
+                          <span className="rounded-md bg-[#FBE2E2] px-2 py-0.5 text-[11px] font-semibold text-error">
+                            📅 Confirmó reunión
+                          </span>
+                        )}
+                        {ins.pendiente_humano && !ins.ia_reunion && (
+                          <span className="rounded-md bg-[#EEF3FE] px-2 py-0.5 text-[11px] font-semibold text-blue">
+                            Sin responder
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {ins.abierto ? (
