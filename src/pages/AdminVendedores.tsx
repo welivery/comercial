@@ -169,10 +169,10 @@ export function AdminVendedores() {
             <Card key={v.id} className="p-[18px]">
               <div className="mb-3.5 flex items-center gap-3">
                 <VAvatar iniciales={v.iniciales} className="size-10 text-[14px]" />
-                <div className="leading-tight">
+                <Link to={`/vendedores/${v.id}`} className="leading-tight hover:underline">
                   <div className="text-[15px] font-semibold text-ink">{v.nombre}</div>
                   <div className="text-[11.5px] text-slate">{v.zona}</div>
-                </div>
+                </Link>
                 <span
                   className="ml-auto rounded-md px-2 py-0.5 text-[11px] font-medium"
                   style={{
@@ -182,6 +182,9 @@ export function AdminVendedores() {
                 >
                   {enRiesgo ? "En riesgo" : "Al día"}
                 </span>
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/vendedores/${v.id}`}>Ficha</Link>
+                </Button>
               </div>
               <GoalRow
                 color={av.pctObjetivo >= 80 ? "#2F5BE6" : "#F2563A"}
