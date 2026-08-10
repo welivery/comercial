@@ -56,6 +56,10 @@ function extraerTel(t?: string | null): string | null {
   const m = (t ?? "").match(/(\+?56\s?9(?:\s?\d){8}|9\d{8})/)
   return m ? m[0].trim() : null
 }
+function extraerContacto(t?: string | null): string | null {
+  const m = (t ?? "").match(/contacto:\s*([^·|]+)/i)
+  return m ? m[1].trim() : null
+}
 // Motivo sin la cola de contacto (ya vive en columnas propias).
 function motivoCorto(t?: string | null): string {
   return (t ?? "").split(/·\s*contacto:/i)[0].trim()
@@ -93,6 +97,7 @@ export function VendedorLeads() {
 
   const emailDe = (l: Lead) => l.email ?? extraerEmail(l.motivo)
   const telDe = (l: Lead) => l.telefono ?? extraerTel(l.motivo)
+  const contactoDe = (l: Lead) => l.contacto ?? extraerContacto(l.motivo)
 
   const cupoDiario = objetivos?.find((o) => o.vendedor_id === vendedor.id)?.leads_cupo_diario ?? 0
 
@@ -296,7 +301,8 @@ export function VendedorLeads() {
         secuencia_id: seqId,
         vendedor_id: vendedor.id,
         lead_id: seqLead.id,
-        destinatario_nombre: seqLead.nombre,
+        destinatario_nombre: contactoDe(seqLead) || seqLead.nombre,
+        destinatario_empresa: seqLead.nombre,
         destinatario_email: seqEmail.trim(),
       })
       const nombre = seqLead.nombre
@@ -338,7 +344,8 @@ export function VendedorLeads() {
           secuencia_id: bulkSeqId,
           vendedor_id: vendedor.id,
           lead_id: l.id,
-          destinatario_nombre: l.nombre,
+          destinatario_nombre: contactoDe(l) || l.nombre,
+          destinatario_empresa: l.nombre,
           destinatario_email: emailDe(l)!,
         })
         ok++

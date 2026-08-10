@@ -147,6 +147,7 @@ export interface Lead {
   web: string | null
   telefono: string | null
   email: string | null
+  contacto: string | null // persona de contacto (para {{nombre}} en secuencias)
   fuentes: FuenteLead[]
   origen: LeadOrigen
   estado: LeadEstado
@@ -190,6 +191,7 @@ export interface SecuenciaInscripcion {
   vendedor_id: string
   lead_id: string | null
   destinatario_nombre: string
+  destinatario_empresa: string | null
   destinatario_email: string
   estado: InscripcionEstado
   paso_actual: number

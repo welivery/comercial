@@ -433,6 +433,7 @@ function mapLead(r: any): Lead {
     web: r.web ?? null,
     telefono: r.telefono ?? null,
     email: r.email ?? null,
+    contacto: r.contacto ?? null,
     fuentes: Array.isArray(r.fuentes) ? r.fuentes : [],
     origen: r.origen,
     estado: r.estado,
@@ -533,6 +534,7 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
         motivo,
         email: c.email ?? null,
         telefono: c.telefono ?? null,
+        contacto: c.contacto ?? null,
         fuentes: [{ tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null }],
         origen: "base",
         estado: "nuevo",
@@ -650,6 +652,7 @@ function mapInscripcion(r: any): SecuenciaInscripcion {
     vendedor_id: r.vendedor_id,
     lead_id: r.lead_id ?? null,
     destinatario_nombre: r.destinatario_nombre ?? "",
+    destinatario_empresa: r.destinatario_empresa ?? null,
     destinatario_email: r.destinatario_email ?? "",
     estado: r.estado as InscripcionEstado,
     paso_actual: r.paso_actual ?? 0,
@@ -775,6 +778,7 @@ export async function inscribir(p: {
   vendedor_id: string
   lead_id: string | null
   destinatario_nombre: string
+  destinatario_empresa?: string | null
   destinatario_email: string
 }): Promise<void> {
   const pasos = await fetchPasos(p.secuencia_id)
@@ -785,6 +789,7 @@ export async function inscribir(p: {
     vendedor_id: p.vendedor_id,
     lead_id: p.lead_id,
     destinatario_nombre: p.destinatario_nombre,
+    destinatario_empresa: p.destinatario_empresa ?? null,
     destinatario_email: p.destinatario_email,
     estado: "activa",
     paso_actual: 0,

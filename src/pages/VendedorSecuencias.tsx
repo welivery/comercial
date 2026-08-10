@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   Copy,
+  Eye,
   Info,
   Mail,
   Pause,
@@ -37,6 +38,7 @@ import {
   rechazarLead,
   type PasoInput,
 } from "@/data/api"
+import { renderPlantilla } from "@/lib/plantillas"
 import { cn } from "@/lib/utils"
 import type { InscripcionEstado, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
 
@@ -80,7 +82,10 @@ export function VendedorSecuencias() {
 
   const [selId, setSelId] = useState<string | null>(null)
   const seleccionada = secuencias.find((s) => s.id === selId) ?? null
-  const esPropia = !!seleccionada && seleccionada.vendedor_id === vendedor.id
+  const esPlantilla = !!seleccionada && seleccionada.vendedor_id === null
+  // El admin edita las plantillas compartidas del equipo; el vendedor, solo las
+  // suyas (para las compartidas usa "Duplicar para editar").
+  const esPropia = !!seleccionada && (seleccionada.vendedor_id === vendedor.id || rol === "admin")
 
   // Editor de pasos (borrador local de la secuencia seleccionada).
   const [pasos, setPasos] = useState<PasoInput[]>([])
@@ -93,6 +98,10 @@ export function VendedorSecuencias() {
 
   // Modal de inscripción.
   const [inscOpen, setInscOpen] = useState(false)
+
+  // Vista previa de la plantilla (con o sin persona de contacto).
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewConNombre, setPreviewConNombre] = useState(true)
 
   // Al elegir una secuencia, carga sus pasos y encabezado.
   useEffect(() => {
@@ -335,10 +344,16 @@ export function VendedorSecuencias() {
             {!esPropia && (
               <div className="mb-3 flex items-center gap-2 rounded-lg bg-[#FCF3E2] px-3 py-2 text-[12px] text-[#8a6416]">
                 <Info size={14} className="shrink-0" />
-                Esta es una plantilla compartida (solo lectura).
+                Esta es una plantilla compartida (solo lectura). Para adaptarla a tu estilo, duplicala.
                 <Button size="sm" variant="blue" className="ml-auto" onClick={() => duplicar(seleccionada)}>
                   <Copy /> Duplicar para editar
                 </Button>
+              </div>
+            )}
+            {esPropia && esPlantilla && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg bg-[#EEF3FE] px-3 py-2 text-[12px] text-blue">
+                <Info size={14} className="shrink-0" />
+                Plantilla del equipo: lo que edites acá lo ven todos los vendedores.
               </div>
             )}
 
@@ -367,9 +382,21 @@ export function VendedorSecuencias() {
               </label>
             </div>
 
-            <div className="mt-4 flex items-center justify-between">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-[13px] font-semibold text-navy">Pasos ({pasos.length})</h3>
-              <span className="text-[11px] text-muted">Variables: {"{{nombre}}"} · {"{{empresa}}"}</span>
+              <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)}>
+                <Eye /> Vista previa
+              </Button>
+            </div>
+            <div className="mt-2 flex items-start gap-2 rounded-lg bg-mist/60 px-3 py-2 text-[11.5px] leading-relaxed text-slate">
+              <Info size={13} className="mt-px shrink-0 text-blue" />
+              <span>
+                Variables: <code className="rounded bg-white px-1 text-blue">{"{{empresa}}"}</code> (nombre del
+                cliente, siempre lo tenemos) y <code className="rounded bg-white px-1 text-blue">{"{{nombre}}"}</code>{" "}
+                (persona de contacto). Si un lead no tiene persona, <b>{"{{nombre}}"}</b> usa el nombre de la empresa;
+                nunca se envía un <code className="rounded bg-white px-1">{"{{…}}"}</code> sin completar. Mirá cómo queda
+                con <b>Vista previa</b>.
+              </span>
             </div>
 
             {cargandoPasos ? (
@@ -580,6 +607,73 @@ export function VendedorSecuencias() {
         </Card>
       )}
 
+      {/* Vista previa de la plantilla con datos de ejemplo */}
+      <Modal open={previewOpen} onClose={() => setPreviewOpen(false)} title="Vista previa del mail">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-[12.5px] text-slate">
+            Ejemplo:
+            <div className="flex gap-1 rounded-lg border border-border bg-mist/40 p-1">
+              <button
+                onClick={() => setPreviewConNombre(true)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors",
+                  previewConNombre ? "bg-white text-navy shadow-[var(--shadow-card)]" : "text-slate hover:text-ink"
+                )}
+              >
+                Con contacto
+              </button>
+              <button
+                onClick={() => setPreviewConNombre(false)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors",
+                  !previewConNombre ? "bg-white text-navy shadow-[var(--shadow-card)]" : "text-slate hover:text-ink"
+                )}
+              >
+                Sin persona (solo empresa)
+              </button>
+            </div>
+          </div>
+          <p className="text-[11.5px] text-muted">
+            Datos de ejemplo: empresa <b>Bicicosas</b>
+            {previewConNombre ? (
+              <>
+                {" "}· contacto <b>Camila</b>
+              </>
+            ) : (
+              <> · sin persona de contacto → se usa la empresa</>
+            )}
+            .
+          </p>
+          {pasos.length === 0 && <p className="text-[13px] text-slate">Esta secuencia no tiene pasos.</p>}
+          {pasos.map((p, i) => {
+            const vars = { nombre: previewConNombre ? "Camila" : "", empresa: "Bicicosas" }
+            return (
+              <div key={i} className="rounded-xl border border-input">
+                <div className="flex items-center gap-2 border-b border-border bg-mist/40 px-3 py-2">
+                  <span className="grid size-5 place-items-center rounded-full bg-navy text-[10px] font-semibold text-white">
+                    {i + 1}
+                  </span>
+                  <span className="text-[11px] text-slate">
+                    {i === 0 ? `a los ${p.dias_espera} días de inscribir` : `esperar ${p.dias_espera} días`}
+                  </span>
+                </div>
+                <div className="p-3">
+                  <div className="text-[13px] font-semibold text-ink">{renderPlantilla(p.asunto, vars)}</div>
+                  <div className="mt-1.5 whitespace-pre-line text-[12.5px] leading-relaxed text-slate">
+                    {renderPlantilla(p.cuerpo, vars)}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setPreviewOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <InscribirModal
         open={inscOpen}
         onClose={() => setInscOpen(false)}
@@ -609,12 +703,13 @@ function InscribirModal({
   onClose: () => void
   vendedorId: string
   secuencias: Secuencia[]
-  leads: { id: string; nombre: string; email: string | null }[]
+  leads: { id: string; nombre: string; email: string | null; contacto?: string | null }[]
   onHecho: () => void
 }) {
   const [secuenciaId, setSecuenciaId] = useState("")
   const [leadId, setLeadId] = useState("")
   const [nombre, setNombre] = useState("")
+  const [empresa, setEmpresa] = useState("")
   const [email, setEmail] = useState("")
   const [guardando, setGuardando] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -624,6 +719,7 @@ function InscribirModal({
       setSecuenciaId(secuencias[0]?.id ?? "")
       setLeadId("")
       setNombre("")
+      setEmpresa("")
       setEmail("")
       setErr(null)
     }
@@ -633,7 +729,8 @@ function InscribirModal({
     setLeadId(id)
     const l = leads.find((x) => x.id === id)
     if (l) {
-      setNombre(l.nombre)
+      setEmpresa(l.nombre) // el nombre del lead es la empresa (e-commerce)
+      setNombre(l.contacto ?? "") // persona de contacto (si la hay)
       if (l.email) setEmail(l.email)
     }
   }
@@ -655,7 +752,8 @@ function InscribirModal({
         secuencia_id: secuenciaId,
         vendedor_id: vendedorId,
         lead_id: leadId || null,
-        destinatario_nombre: nombre.trim(),
+        destinatario_nombre: nombre.trim() || empresa.trim(),
+        destinatario_empresa: empresa.trim() || null,
         destinatario_email: email.trim(),
       })
       onHecho()
@@ -699,21 +797,25 @@ function InscribirModal({
 
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-slate">Nombre del contacto</span>
-            <input value={nombre} onChange={(e) => setNombre(e.target.value)} className="inp" placeholder="Nombre" />
+            <span className="text-[12px] font-medium text-slate">Empresa {"{{empresa}}"}</span>
+            <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} className="inp" placeholder="E-commerce" />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-slate">Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="inp"
-              placeholder="contacto@empresa.cl"
-              required
-            />
+            <span className="text-[12px] font-medium text-slate">Persona de contacto {"{{nombre}}"}</span>
+            <input value={nombre} onChange={(e) => setNombre(e.target.value)} className="inp" placeholder="Opcional" />
           </label>
         </div>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-slate">Email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="inp"
+            placeholder="contacto@empresa.cl"
+            required
+          />
+        </label>
 
         {err && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{err}</div>}
 
