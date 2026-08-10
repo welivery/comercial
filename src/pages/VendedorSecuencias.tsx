@@ -396,6 +396,7 @@ export function VendedorSecuencias() {
     try {
       await responderInscripcion(respIns.id, respTexto.trim())
       setRespOk(true)
+      reloadInsc()
       setTimeout(() => setRespIns(null), 1200)
     } catch (err) {
       setRespErr(err instanceof Error ? err.message : "No se pudo enviar")
