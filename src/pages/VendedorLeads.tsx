@@ -19,7 +19,7 @@ import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useCreditosLeads, useInscripciones, useLeads, useObjetivos, useSecuencias } from "@/hooks/useData"
-import { convertirLead, inscribir, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
+import { asignarLeads, convertirLead, inscribir, reactivarLead, rechazarLead, sembrarLeadsBase } from "@/data/api"
 import { generarLeadsIA } from "@/data/leads"
 import { asignarBucket } from "@/lib/buckets"
 import { MOTIVOS_RECHAZO, MOTIVO_RECHAZO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
@@ -125,8 +125,10 @@ export function VendedorLeads() {
   const [estadoFiltro, setEstadoFiltro] = useState<LeadEstado | "todos">("nuevo")
   const [periodo, setPeriodo] = useState("todo")
 
-  // Selección múltiple (para inscribir en lote).
+  // Selección múltiple (para inscribir en lote / reasignar).
   const [sel, setSel] = useState<Set<string>>(new Set())
+  const [asignarA, setAsignarA] = useState("")
+  const [asignando, setAsignando] = useState(false)
   useEffect(() => setSel(new Set()), [estadoFiltro, periodo])
 
   const [rechId, setRechId] = useState<string | null>(null)
@@ -366,6 +368,29 @@ export function VendedorLeads() {
     })
   }
 
+  async function asignarSeleccion() {
+    if (!asignarA || sel.size === 0 || asignando) return
+    setAsignando(true)
+    try {
+      const r = await asignarLeads([...sel], asignarA)
+      const nom = vendedores.find((v) => v.id === asignarA)?.nombre ?? "el vendedor"
+      setSel(new Set())
+      setAsignarA("")
+      reload()
+      setAviso({
+        tipo: r.movidos > 0 ? "ok" : "info",
+        texto:
+          `${r.movidos} lead${r.movidos === 1 ? "" : "s"} asignado${r.movidos === 1 ? "" : "s"} a ${nom}` +
+          (r.omitidos ? ` · ${r.omitidos} ya los tenía o eran suyos` : "") +
+          ".",
+      })
+    } catch (e) {
+      setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo asignar" })
+    } finally {
+      setAsignando(false)
+    }
+  }
+
   function abrirConvertir(l: Lead) {
     setConvLead(l)
     setErrForm(null)
@@ -570,6 +595,25 @@ export function VendedorLeads() {
               <Button size="sm" variant="blue" onClick={abrirBulk}>
                 <Send /> Poner en secuencia
               </Button>
+              {vendedores.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={asignarA}
+                    onChange={(e) => setAsignarA(e.target.value)}
+                    className="rounded-lg border border-input bg-white px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-blue"
+                  >
+                    <option value="">Asignar a…</option>
+                    {vendedores.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.nombre}
+                      </option>
+                    ))}
+                  </select>
+                  <Button size="sm" variant="outline" disabled={!asignarA || asignando} onClick={asignarSeleccion}>
+                    {asignando ? "Asignando…" : "Asignar"}
+                  </Button>
+                </div>
+              )}
               <button onClick={() => setSel(new Set())} className="text-[12px] font-medium text-slate hover:text-ink">
                 Limpiar
               </button>

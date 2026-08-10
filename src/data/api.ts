@@ -635,6 +635,34 @@ export async function rechazarLead(id: string, motivo: MotivoRechazo): Promise<v
   if (error) throw new Error(error.message)
 }
 
+// Reasigna leads a otro vendedor. Cada lead queda con un único dueño. Si el
+// destino ya tiene un lead con la misma clave (dedup), ese se omite (no se pisa).
+// Devuelve cuántos se movieron y cuántos se omitieron.
+export async function asignarLeads(
+  ids: string[],
+  vendedorId: string
+): Promise<{ movidos: number; omitidos: number }> {
+  if (!ids.length || !vendedorId) return { movidos: 0, omitidos: 0 }
+  const { data: sel, error } = await supabase.from("leads").select("id, clave, vendedor_id").in("id", ids)
+  if (error) throw new Error(error.message)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const filas = (sel ?? []) as any[]
+  const claves = [...new Set(filas.map((l) => l.clave))]
+  const { data: exist } = await supabase.from("leads").select("clave").eq("vendedor_id", vendedorId).in("clave", claves)
+  const yaTiene = new Set((exist ?? []).map((l: any) => l.clave))
+  // No mover los que el destino ya tiene, ni los que ya son de ese vendedor.
+  const mover = filas.filter((l) => l.vendedor_id !== vendedorId && !yaTiene.has(l.clave)).map((l) => l.id)
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  if (mover.length) {
+    const { error: updErr } = await supabase
+      .from("leads")
+      .update({ vendedor_id: vendedorId, updated_at: new Date().toISOString() })
+      .in("id", mover)
+    if (updErr) throw new Error(updErr.message)
+  }
+  return { movidos: mover.length, omitidos: ids.length - mover.length }
+}
+
 // Vuelve un lead rechazado a "nuevo" (deshacer).
 export async function reactivarLead(id: string): Promise<void> {
   const { error } = await supabase
