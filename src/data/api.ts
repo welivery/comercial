@@ -550,13 +550,23 @@ export interface LeadActividad {
 }
 
 export async function fetchLeadsEquipo(): Promise<LeadActividad[]> {
-  const { data, error } = await supabase.from("leads").select("vendedor_id, estado, updated_at")
+  // El dashboard grafica hasta 6 meses hacia atrás y solo cuenta leads YA
+  // contactados (estado != 'nuevo'). Acotamos la query a esa ventana en vez de
+  // traer la tabla entera: mismos números, payload acotado aunque crezcan los
+  // leads históricos. (A gran escala, mover la agregación a una RPC/vista.)
+  const desde = new Date()
+  desde.setDate(desde.getDate() - 200) // cubre 6 meses + mes actual del gráfico
+  const { data, error } = await supabase
+    .from("leads")
+    .select("vendedor_id, estado, updated_at")
+    .neq("estado", "nuevo")
+    .gte("updated_at", desde.toISOString())
   if (error) throw new Error(error.message)
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return (data ?? []).map((r: any) => ({
     vendedor_id: r.vendedor_id,
     estado: r.estado,
-    contactado_at: r.estado !== "nuevo" ? r.updated_at : null,
+    contactado_at: r.updated_at,
   }))
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }

@@ -125,7 +125,10 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ raw, threadId: ins.gmail_thread_id }),
     })
     const sj = await send.json()
-    if (!send.ok) return json(502, { error: `Gmail rechazó el envío: ${JSON.stringify(sj).slice(0, 200)}` })
+    if (!send.ok) {
+      console.error("gmail send rechazado:", JSON.stringify(sj).slice(0, 500))
+      return json(502, { error: "Gmail rechazó el envío. Revisá la conexión de tu casilla e intentá de nuevo." })
+    }
 
     // El vendedor respondió → deja de estar pendiente (hasta que el cliente
     // vuelva a escribir, que lo re-marca pendiente).

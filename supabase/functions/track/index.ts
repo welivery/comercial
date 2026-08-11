@@ -37,21 +37,10 @@ Deno.serve(async (req) => {
   const id = new URL(req.url).searchParams.get("i")
   if (id) {
     try {
+      // Incremento atómico (una sola sentencia) para no perder aperturas casi
+      // simultáneas. La RPC vive en secuencias-apertura-rpc.sql.
       const admin = createClient(SUPABASE_URL, SERVICE_ROLE)
-      const { data } = await admin
-        .from("secuencia_inscripciones")
-        .select("abierto_at, aperturas")
-        .eq("id", id)
-        .maybeSingle()
-      if (data) {
-        await admin
-          .from("secuencia_inscripciones")
-          .update({
-            aperturas: (data.aperturas ?? 0) + 1,
-            abierto_at: data.abierto_at ?? new Date().toISOString(),
-          })
-          .eq("id", id)
-      }
+      await admin.rpc("registrar_apertura", { p_id: id })
     } catch {
       /* nunca fallar el pixel: si no se pudo registrar, igual devolvemos la imagen */
     }

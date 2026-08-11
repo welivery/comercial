@@ -382,7 +382,8 @@ Después de investigar, terminá tu respuesta con UN ÚNICO bloque \`\`\`json qu
 
   if (!aiRes.ok || !aiRes.body) {
     const detalle = await aiRes.text().catch(() => "")
-    return json(502, { error: `Error de la IA (${aiRes.status})`, detalle: detalle.slice(0, 500) })
+    console.error(`anthropic error ${aiRes.status}:`, detalle.slice(0, 800))
+    return json(502, { error: `No se pudo generar leads con IA (${aiRes.status}). Probá de nuevo en un rato.` })
   }
 
   // Reenvío en streaming (NDJSON): mandamos avisos de progreso a medida que la

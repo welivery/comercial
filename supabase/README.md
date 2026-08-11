@@ -73,6 +73,8 @@ Correr en este orden si todavía no se corrieron:
     Junto con esto, **redeployar las Edge Functions** `gmail-oauth`, `leads-ia` y
     `secuencias-cron` (traen los fixes de CSRF, IDOR y fail-open). `secuencias-cron`
     **necesita `CRON_SECRET` seteado** o queda cerrada (fail-closed).
+17. `secuencias-apertura-rpc.sql` — incremento atómico del contador de aperturas
+    (evita perder aperturas concurrentes). Redeployar la función `track`.
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se

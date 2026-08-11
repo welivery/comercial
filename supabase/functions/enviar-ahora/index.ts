@@ -135,7 +135,10 @@ Deno.serve(async (req) => {
       body: JSON.stringify(body),
     })
     const sj = await send.json()
-    if (!send.ok) return json(502, { error: `Gmail rechazó el envío: ${JSON.stringify(sj).slice(0, 200)}` })
+    if (!send.ok) {
+      console.error("gmail send rechazado:", JSON.stringify(sj).slice(0, 500))
+      return json(502, { error: "Gmail rechazó el envío. Revisá la conexión de tu casilla e intentá de nuevo." })
+    }
 
     const sig = lista[idx + 1]
     const proximo = sig ? new Date(Date.now() + (sig.dias_espera ?? 0) * 864e5).toISOString() : null
