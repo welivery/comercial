@@ -333,13 +333,21 @@ const ORDEN_ESTADOS: EstadoOportunidad[] = [
 
 // Cambia el estado y backfillea los hitos temporales que correspondan (sin pisar
 // los ya seteados), para que las métricas queden consistentes.
-export async function moverOportunidad(o: Oportunidad, nuevo: EstadoOportunidad): Promise<void> {
+export async function moverOportunidad(
+  o: Oportunidad,
+  nuevo: EstadoOportunidad,
+  motivo?: string
+): Promise<void> {
   const now = new Date().toISOString()
   const idx = ORDEN_ESTADOS.indexOf(nuevo)
   const patch: Record<string, unknown> = { estado: nuevo }
   if (idx >= 1 && !o.reunion_coordinada_at) patch.reunion_coordinada_at = now
   if (idx >= 2 && !o.reunion_efectiva_at) patch.reunion_efectiva_at = now
   if (nuevo === "cierre_ganado" && !o.cierre_at) patch.cierre_at = now
+  // "No interesado / Perdido": guarda el motivo. Si se recupera (sale de
+  // perdido a otra etapa), limpia el motivo viejo.
+  if (nuevo === "perdido") patch.perdida_motivo = (motivo ?? "").trim() || null
+  else if (o.estado === "perdido") patch.perdida_motivo = null
   const { error } = await supabase.from("oportunidades").update(patch).eq("id", o.id)
   if (error) throw new Error(error.message)
 }

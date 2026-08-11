@@ -68,7 +68,6 @@ export function VendedorPipeline() {
   const { data: oportunidades, loading, error, reload } = useOportunidades(vendedor.id)
   const ops = useMemo(() => oportunidades ?? [], [oportunidades])
   const activas = ops.filter(esActiva).length
-  const perdidas = ops.filter((o) => o.estado === "perdido").length
 
   const [drag, setDrag] = useState<Oportunidad | null>(null)
   const [over, setOver] = useState<EstadoOportunidad | null>(null)
@@ -77,6 +76,11 @@ export function VendedorPipeline() {
   const [form, setForm] = useState<OpForm>(VACIO)
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
+
+  // Modal "No interesado / perdido": pide el motivo antes de mover a perdido.
+  const [perderOp, setPerderOp] = useState<Oportunidad | null>(null)
+  const [perderMotivo, setPerderMotivo] = useState("")
+  const [perderSaving, setPerderSaving] = useState(false)
 
   async function onDrop(estado: EstadoOportunidad) {
     const o = drag
@@ -88,6 +92,32 @@ export function VendedorPipeline() {
       reload()
     } catch (err) {
       toast.error(msgError(err, "No se pudo mover"))
+    }
+  }
+
+  // Soltar en "No interesado": no mueve al toque, abre el modal para el motivo.
+  function onDropPerdido() {
+    const o = drag
+    setDrag(null)
+    setOver(null)
+    if (!o || o.estado === "perdido") return
+    setPerderOp(o)
+    setPerderMotivo("")
+  }
+
+  async function confirmarPerder(e: React.FormEvent) {
+    e.preventDefault()
+    if (!perderOp) return
+    setPerderSaving(true)
+    try {
+      await moverOportunidad(perderOp, "perdido", perderMotivo)
+      setPerderOp(null)
+      setPerderMotivo("")
+      reload()
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo marcar como no interesado"))
+    } finally {
+      setPerderSaving(false)
     }
   }
 
@@ -217,13 +247,68 @@ export function VendedorPipeline() {
                   )
                 })}
                 {cards.length === 0 && <div className="py-3 text-center text-[11px] text-muted">—</div>}
-                {estado === "cierre_ganado" && perdidas > 0 && (
-                  <div className="py-1 text-center text-[11px] text-slate">+ Perdido ({perdidas})</div>
-                )}
               </div>
             </div>
           )
         })}
+
+        {/* Columna "No interesado" (perdido): drop zone + motivo */}
+        {(() => {
+          const cards = ops.filter((o) => o.estado === "perdido")
+          const activo = over === "perdido" && drag && drag.estado !== "perdido"
+          return (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault()
+                setOver("perdido")
+              }}
+              onDragLeave={() => setOver((o) => (o === "perdido" ? null : o))}
+              onDrop={onDropPerdido}
+              className={cn(
+                "flex w-[230px] shrink-0 flex-col rounded-xl border transition-colors",
+                activo ? "border-error bg-[#FBE2E2]" : "border-dashed border-border bg-mist/30"
+              )}
+            >
+              <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
+                <span className="size-2 rounded-sm" style={{ background: ESTADO_COLOR.perdido }} />
+                <span className="text-[12.5px] font-semibold text-navy">No interesado</span>
+                <span className="ml-auto rounded-full bg-cloud px-1.5 text-[11px] font-semibold text-slate tabular-nums">
+                  {cards.length}
+                </span>
+              </div>
+              <div className="flex min-h-[60px] flex-col gap-2.5 p-2.5">
+                {cards.map((o) => (
+                  <div
+                    key={o.id}
+                    draggable
+                    onDragStart={() => setDrag(o)}
+                    onDragEnd={() => {
+                      setDrag(null)
+                      setOver(null)
+                    }}
+                    onClick={() => navigate(`/pipeline/${o.id}`)}
+                    className="cursor-grab rounded-lg border border-input bg-white p-3 hover:border-blue hover:shadow-[var(--shadow-card)]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-semibold text-slate line-through">{o.ecommerce}</span>
+                      <BucketChip bucket={o.bucket} short />
+                    </div>
+                    {o.perdida_motivo && (
+                      <div className="mt-1.5 rounded border-l-2 border-error/40 bg-[#FBE2E2]/50 px-2 py-1 text-[11px] leading-relaxed text-[#8a2f2f]">
+                        {o.perdida_motivo}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {cards.length === 0 && (
+                  <div className="py-3 text-center text-[11px] leading-relaxed text-muted">
+                    Arrastrá acá una oportunidad que no prosperó y cargá el motivo.
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
@@ -290,6 +375,36 @@ export function VendedorPipeline() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: marcar No interesado / perdido con motivo */}
+      <Modal open={!!perderOp} onClose={() => setPerderOp(null)} title="Marcar como no interesado">
+        {perderOp && (
+          <form onSubmit={confirmarPerder} className="flex flex-col gap-3.5">
+            <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+              <b className="text-ink">{perderOp.ecommerce}</b> sale del pipeline activo. Contá qué pasó — queda
+              registrado para saber por qué no prosperó (y para una futura reconquista).
+            </p>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Motivo / nota</span>
+              <textarea
+                value={perderMotivo}
+                onChange={(e) => setPerderMotivo(e.target.value)}
+                className="inp min-h-[90px] resize-y"
+                placeholder="Ej: no cerró por precio · se quedó con otro courier · no respondió tras la reunión…"
+                autoFocus
+              />
+            </label>
+            <div className="mt-1 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setPerderOp(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="blue" disabled={perderSaving}>
+                {perderSaving ? "Guardando…" : "Marcar no interesado"}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>

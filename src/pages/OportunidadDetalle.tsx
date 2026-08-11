@@ -1,7 +1,9 @@
+import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { ArrowLeft, FileText, Pencil, Receipt } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Modal } from "@/components/Modal"
 import { BucketChip, Cargando, EstadoBadge } from "@/components/widgets"
 import { useEventos, useOportunidad } from "@/hooks/useData"
 import { moverOportunidad } from "@/data/api"
@@ -32,14 +34,38 @@ export function OportunidadDetalle() {
   const { data: o, loading, reload } = useOportunidad(id)
   const { data: eventosData } = useEventos(id)
   const toast = useToast()
+  const [perdOpen, setPerdOpen] = useState(false)
+  const [perdMotivo, setPerdMotivo] = useState("")
+  const [perdSaving, setPerdSaving] = useState(false)
 
   async function mover(nuevo: EstadoOportunidad) {
     if (!o || nuevo === o.estado) return
+    // "No interesado / perdido": pedimos el motivo antes de mover.
+    if (nuevo === "perdido") {
+      setPerdMotivo("")
+      setPerdOpen(true)
+      return
+    }
     try {
       await moverOportunidad(o, nuevo)
       reload()
     } catch (err) {
       toast.error(msgError(err, "No se pudo actualizar"))
+    }
+  }
+
+  async function confirmarPerder(e: React.FormEvent) {
+    e.preventDefault()
+    if (!o) return
+    setPerdSaving(true)
+    try {
+      await moverOportunidad(o, "perdido", perdMotivo)
+      setPerdOpen(false)
+      reload()
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo marcar"))
+    } finally {
+      setPerdSaving(false)
     }
   }
 
@@ -186,8 +212,41 @@ export function OportunidadDetalle() {
               Cerrado en {diasEntre(o.declarada_at, new Date(o.cierre_at))} días desde que se declaró.
             </div>
           )}
+          {o.estado === "perdido" && (
+            <div className="mt-3 rounded-lg border-l-2 border-error/40 bg-[#FBE2E2]/50 px-3 py-2 text-[12px] text-[#8a2f2f]">
+              <b>No interesado.</b> {o.perdida_motivo || "Sin motivo cargado."}
+            </div>
+          )}
         </Card>
       </div>
+
+      {/* Modal: motivo de No interesado */}
+      <Modal open={perdOpen} onClose={() => setPerdOpen(false)} title="Marcar como no interesado">
+        <form onSubmit={confirmarPerder} className="flex flex-col gap-3.5">
+          <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+            <b className="text-ink">{o.ecommerce}</b> sale del pipeline activo. Contá qué pasó — queda en el
+            historial para saber por qué no prosperó.
+          </p>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[12px] font-medium text-slate">Motivo / nota</span>
+            <textarea
+              value={perdMotivo}
+              onChange={(e) => setPerdMotivo(e.target.value)}
+              className="min-h-[90px] w-full resize-y rounded-lg border border-input px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+              placeholder="Ej: no cerró por precio · se quedó con otro courier · no respondió tras la reunión…"
+              autoFocus
+            />
+          </label>
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setPerdOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="blue" disabled={perdSaving}>
+              {perdSaving ? "Guardando…" : "Marcar no interesado"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </>
   )
 }
