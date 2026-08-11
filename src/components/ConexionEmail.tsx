@@ -4,6 +4,8 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useEmailCuenta } from "@/hooks/useData"
 import { desconectarEmail, iniciarConexionGmail } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 
 // Tarjeta (compacta) para conectar/desconectar la casilla de Gmail del vendedor.
@@ -11,6 +13,7 @@ export function ConexionEmail({ vendedorId, onEditar }: { vendedorId: string; on
   const { data: cuenta, loading, reload } = useEmailCuenta(vendedorId)
   const [aviso, setAviso] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null)
   const [conectando, setConectando] = useState(false)
+  const toast = useToast()
 
   // Lee el resultado del OAuth (?email=ok/error/cancelado) y limpia la URL.
   useEffect(() => {
@@ -33,7 +36,7 @@ export function ConexionEmail({ vendedorId, onEditar }: { vendedorId: string; on
       setAviso(null)
       reload()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo desconectar")
+      toast.error(msgError(e, "No se pudo desconectar"))
     }
   }
 
@@ -81,7 +84,7 @@ export function ConexionEmail({ vendedorId, onEditar }: { vendedorId: string; on
             try {
               window.location.href = await iniciarConexionGmail()
             } catch (e) {
-              setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo iniciar la conexión" })
+              setAviso({ tipo: "error", texto: msgError(e, "No se pudo iniciar la conexión") })
               setConectando(false)
             }
           }}

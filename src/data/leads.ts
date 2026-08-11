@@ -7,6 +7,7 @@
 // límite de créditos).
 
 import { supabase } from "@/lib/supabase"
+import { msgError } from "@/lib/errors"
 
 const LEADS_FN = "swift-function"
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
@@ -92,6 +93,6 @@ export async function generarLeadsIA(
     if (done) return done
     return fail(errMsg ?? "No se recibió respuesta de la IA.")
   } catch (e) {
-    return fail(e instanceof Error ? e.message : "Error de red")
+    return fail(msgError(e, "Error de red"))
   }
 }

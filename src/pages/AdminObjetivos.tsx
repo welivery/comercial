@@ -12,6 +12,7 @@ import {
   guardarSegmento,
 } from "@/data/api"
 import { PERIODO_ACTUAL, PERIODO_LABEL } from "@/lib/display"
+import { msgError } from "@/lib/errors"
 import { segmentosActivos, setSegmentosRegistry, useSegmentos } from "@/lib/buckets"
 import type { Objetivo, Segmento, Vendedor } from "@/lib/types"
 
@@ -100,7 +101,7 @@ function SegmentosEditor({ onCambio }: { onCambio: () => void }) {
       setTimeout(() => setGuardado(false), 2500)
       onCambio()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "No se pudieron guardar los segmentos")
+      setErr(msgError(e, "No se pudieron guardar los segmentos"))
     } finally {
       setGuardando(false)
     }
@@ -265,7 +266,7 @@ function ObjetivoEditor({
       setTimeout(() => setGuardado(false), 2500)
       onGuardado?.()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "No se pudo guardar")
+      setErr(msgError(e, "No se pudo guardar"))
     } finally {
       setGuardando(false)
     }

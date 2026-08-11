@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useConfigSecuencias } from "@/hooks/useData"
 import { guardarConfigSecuencias } from "@/data/api"
+import { msgError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 import type { ConfigSecuencias } from "@/lib/types"
 
@@ -29,7 +30,7 @@ export function ConfigAutomatizacion() {
       setGuardado(true)
       setTimeout(() => setGuardado(false), 2500)
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "No se pudo guardar")
+      setErr(msgError(e, "No se pudo guardar"))
     } finally {
       setGuardando(false)
     }

@@ -21,6 +21,7 @@ import {
   fetchUsuarios,
   fetchVendedores,
 } from "@/data/api"
+import { msgError } from "@/lib/errors"
 
 export interface AsyncState<T> {
   data: T | undefined
@@ -44,7 +45,7 @@ function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> {
     setError(null)
     run()
       .then((d) => vivo && setData(d))
-      .catch((e) => vivo && setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => vivo && setError(msgError(e)))
       .finally(() => vivo && setLoading(false))
     return () => {
       vivo = false

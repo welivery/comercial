@@ -14,6 +14,8 @@ import {
   importarDeudores,
   type ClienteInput,
 } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { CSV_PLANTILLA, parseClientesCsv, parseDeudoresCsv, type DeudorRow, type ParseResult } from "@/lib/csv"
 import { segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, iniciales } from "@/lib/display"
@@ -49,6 +51,7 @@ const VACIO: ClienteInput = {
 
 export function AdminClientes() {
   const [filtro, setFiltro] = useState<Filtro>("todos")
+  const toast = useToast()
   const { data: clientes, loading, error, reload } = useClientes()
   const { data: vendedores } = useVendedores()
   const { data: contexto } = useContexto()
@@ -105,13 +108,13 @@ export function AdminClientes() {
       setDeuOpen(false)
       reload()
       const verbo = deuAccion === "eliminar" ? "eliminados" : "marcados con deuda"
-      window.alert(
+      toast.ok(
         `${r.afectados} clientes ${verbo}.` +
           (r.leadsSacados ? ` ${r.leadsSacados} leads sin clasificar se sacaron de las listas.` : "") +
           (r.noEnBase ? ` ${r.noEnBase} no estaban en la base (se ignoraron).` : "")
       )
     } catch (err) {
-      setDeuMsg(err instanceof Error ? err.message : "No se pudo procesar")
+      setDeuMsg(msgError(err, "No se pudo procesar"))
     } finally {
       setDeuProc(false)
     }
@@ -153,9 +156,9 @@ export function AdminClientes() {
       setImpOpen(false)
       reload()
       setImpMsg(null)
-      window.alert(`Se importaron ${n} clientes.`)
+      toast.ok(`Se importaron ${n} clientes.`)
     } catch (err) {
-      setImpMsg(err instanceof Error ? err.message : "No se pudo importar")
+      setImpMsg(msgError(err, "No se pudo importar"))
     } finally {
       setImportando(false)
     }
@@ -224,7 +227,7 @@ export function AdminClientes() {
       setAbierto(false)
       reload()
     } catch (err) {
-      setErrForm(err instanceof Error ? err.message : "No se pudo guardar")
+      setErrForm(msgError(err, "No se pudo guardar"))
     } finally {
       setGuardando(false)
     }
@@ -235,7 +238,7 @@ export function AdminClientes() {
       await eliminarCliente(c.id)
       reload()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "No se pudo eliminar")
+      toast.error(msgError(err, "No se pudo eliminar"))
     }
   }
 

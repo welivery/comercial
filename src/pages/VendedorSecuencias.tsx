@@ -48,6 +48,8 @@ import {
   type HiloMensaje,
   type PasoInput,
 } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { renderPlantilla } from "@/lib/plantillas"
 import { cn } from "@/lib/utils"
 import type { InscripcionEstado, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
@@ -119,6 +121,7 @@ function KpiFila({ k }: { k: ReturnType<typeof kpiSec> }) {
 
 export function VendedorSecuencias() {
   const { vendedor, modo, vendedores } = useVentas()
+  const toast = useToast()
   // Dos vistas en la misma ruta, sin duplicar:
   //  · Admin  → general: automatización + plantillas del equipo (aplican a todos).
   //  · Vendedor → personal: conectar email + mis secuencias + contactos/respuestas.
@@ -221,7 +224,7 @@ export function VendedorSecuencias() {
           }))
         )
       })
-      .catch((e) => setErrEditor(e instanceof Error ? e.message : "No se pudieron cargar los pasos"))
+      .catch((e) => setErrEditor(msgError(e, "No se pudieron cargar los pasos")))
       .finally(() => setCargandoPasos(false))
     const s = secuencias.find((x) => x.id === selId)
     if (s) {
@@ -251,7 +254,7 @@ export function VendedorSecuencias() {
       reload()
       setSelId(id)
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo crear")
+      toast.error(msgError(e, "No se pudo crear"))
     }
   }
 
@@ -261,7 +264,7 @@ export function VendedorSecuencias() {
       reload()
       setSelId(id)
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo duplicar")
+      toast.error(msgError(e, "No se pudo duplicar"))
     }
   }
 
@@ -272,7 +275,7 @@ export function VendedorSecuencias() {
       if (selId === s.id) setSelId(null)
       reload()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo eliminar")
+      toast.error(msgError(e, "No se pudo eliminar"))
     }
   }
 
@@ -295,7 +298,7 @@ export function VendedorSecuencias() {
       setTimeout(() => setGuardado(false), 2500)
       reload()
     } catch (e) {
-      setErrEditor(e instanceof Error ? e.message : "No se pudo guardar")
+      setErrEditor(msgError(e, "No se pudo guardar"))
     } finally {
       setGuardando(false)
     }
@@ -322,7 +325,7 @@ export function VendedorSecuencias() {
       await actualizarInscripcion(ins.id, "terminada")
       reloadInsc()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo actualizar")
+      toast.error(msgError(e, "No se pudo actualizar"))
     }
   }
 
@@ -333,9 +336,9 @@ export function VendedorSecuencias() {
     try {
       await enviarAhoraInscripcion(ins.id)
       reloadInsc()
-      window.alert("Mail enviado. Revisá la casilla del destinatario.")
+      toast.ok("Mail enviado. Revisá la casilla del destinatario.")
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo enviar")
+      toast.error(msgError(e, "No se pudo enviar"))
     } finally {
       setEnviando(null)
     }
@@ -372,7 +375,7 @@ export function VendedorSecuencias() {
       reloadInsc()
       navigate(`/pipeline/${opId}`)
     } catch (err) {
-      setOppErr(err instanceof Error ? err.message : "No se pudo crear la oportunidad")
+      setOppErr(msgError(err, "No se pudo crear la oportunidad"))
     } finally {
       setOppSaving(false)
     }
@@ -401,7 +404,7 @@ export function VendedorSecuencias() {
       reloadInsc()
       setTimeout(() => setRespIns(null), 1200)
     } catch (err) {
-      setRespErr(err instanceof Error ? err.message : "No se pudo enviar")
+      setRespErr(msgError(err, "No se pudo enviar"))
     } finally {
       setRespSaving(false)
     }
@@ -413,7 +416,7 @@ export function VendedorSecuencias() {
       await marcarRespondido(ins.id)
       reloadInsc()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "No se pudo marcar como respondido")
+      toast.error(msgError(err, "No se pudo marcar como respondido"))
     }
   }
 
@@ -1214,7 +1217,7 @@ function InscribirModal({
       })
       onHecho()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "No se pudo inscribir")
+      setErr(msgError(e, "No se pudo inscribir"))
     } finally {
       setGuardando(false)
     }

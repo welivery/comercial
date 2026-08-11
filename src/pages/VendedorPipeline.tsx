@@ -8,6 +8,8 @@ import { BucketChip, Cargando, ErrorMsg } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useOportunidades } from "@/hooks/useData"
 import { crearOportunidad, moverOportunidad } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { asignarBucket } from "@/lib/buckets"
 import { esActiva } from "@/lib/metrics"
 import {
@@ -62,6 +64,7 @@ const VACIO: OpForm = {
 export function VendedorPipeline() {
   const { vendedor } = useVentas()
   const navigate = useNavigate()
+  const toast = useToast()
   const { data: oportunidades, loading, error, reload } = useOportunidades(vendedor.id)
   const ops = useMemo(() => oportunidades ?? [], [oportunidades])
   const activas = ops.filter(esActiva).length
@@ -84,7 +87,7 @@ export function VendedorPipeline() {
       await moverOportunidad(o, estado)
       reload()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "No se pudo mover")
+      toast.error(msgError(err, "No se pudo mover"))
     }
   }
 
@@ -113,7 +116,7 @@ export function VendedorPipeline() {
       setForm(VACIO)
       reload()
     } catch (err) {
-      setErrForm(err instanceof Error ? err.message : "No se pudo crear")
+      setErrForm(msgError(err, "No se pudo crear"))
     } finally {
       setGuardando(false)
     }

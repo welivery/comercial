@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { BucketChip, Cargando, EstadoBadge } from "@/components/widgets"
 import { useEventos, useOportunidad } from "@/hooks/useData"
 import { moverOportunidad } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { motivoBucket } from "@/lib/buckets"
 import type { EstadoOportunidad } from "@/lib/types"
 import {
@@ -29,6 +31,7 @@ export function OportunidadDetalle() {
   const { id } = useParams()
   const { data: o, loading, reload } = useOportunidad(id)
   const { data: eventosData } = useEventos(id)
+  const toast = useToast()
 
   async function mover(nuevo: EstadoOportunidad) {
     if (!o || nuevo === o.estado) return
@@ -36,7 +39,7 @@ export function OportunidadDetalle() {
       await moverOportunidad(o, nuevo)
       reload()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "No se pudo actualizar")
+      toast.error(msgError(err, "No se pudo actualizar"))
     }
   }
 

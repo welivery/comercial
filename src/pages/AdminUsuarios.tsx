@@ -14,6 +14,8 @@ import {
   eliminarUsuario,
   type VendedorRow,
 } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { useVentas } from "@/store"
 
 type RolV = "admin" | "vendedor"
@@ -29,6 +31,7 @@ const VACIO: FormState = { nombre: "", email: "", zona: "", rol: "vendedor", pas
 
 export function AdminUsuarios() {
   const { usuario } = useVentas()
+  const toast = useToast()
   const { data: usuarios, loading, error, reload } = useUsuarios()
   const [abierto, setAbierto] = useState(false)
   const [editUser, setEditUser] = useState<VendedorRow | null>(null)
@@ -83,7 +86,7 @@ export function AdminUsuarios() {
       setAbierto(false)
       reload()
     } catch (err) {
-      setErrForm(err instanceof Error ? err.message : "No se pudo guardar")
+      setErrForm(msgError(err, "No se pudo guardar"))
     } finally {
       setGuardando(false)
     }
@@ -105,7 +108,7 @@ export function AdminUsuarios() {
       else await eliminarUsuario(u.id)
       reload()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : "No se pudo eliminar")
+      toast.error(msgError(err, "No se pudo eliminar"))
     }
   }
 

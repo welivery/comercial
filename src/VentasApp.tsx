@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react"
 import { Navigate, Outlet, Route, Routes } from "react-router-dom"
 import { VentasProvider, useVentas } from "@/store"
 import { VentasLayout } from "@/components/VentasLayout"
+import { ToastProvider } from "@/components/Toast"
 import { Login } from "@/pages/Login"
 
 // Páginas por ruta en chunks separados (code-splitting): un vendedor no descarga
@@ -60,6 +61,7 @@ function RoleGate() {
 export function VentasApp() {
   return (
     <VentasProvider>
+      <ToastProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route element={<Gate />}>
@@ -84,6 +86,7 @@ export function VentasApp() {
           </Route>
         </Route>
       </Routes>
+      </ToastProvider>
     </VentasProvider>
   )
 }

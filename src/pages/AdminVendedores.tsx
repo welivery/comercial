@@ -9,6 +9,7 @@ import { Modal } from "@/components/Modal"
 import { Cargando, ErrorMsg, Progress, SectionTitle, VAvatar } from "@/components/widgets"
 import { useObjetivos, useOportunidades, useVendedores } from "@/hooks/useData"
 import { crearUsuario, crearUsuarioConAcceso } from "@/data/api"
+import { msgError } from "@/lib/errors"
 import { avanceVendedor, type AvanceVendedor } from "@/lib/metrics"
 import { PERIODO_ACTUAL } from "@/lib/display"
 import type { Vendedor } from "@/lib/types"
@@ -96,7 +97,7 @@ export function AdminVendedores() {
       setForm(VACIO)
       reload()
     } catch (err) {
-      setErrForm(err instanceof Error ? err.message : "No se pudo agregar")
+      setErrForm(msgError(err, "No se pudo agregar"))
     } finally {
       setGuardando(false)
     }

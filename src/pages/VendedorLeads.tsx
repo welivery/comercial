@@ -31,6 +31,8 @@ import {
   sembrarLeadsBase,
 } from "@/data/api"
 import { generarLeadsIA } from "@/data/leads"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { asignarBucket } from "@/lib/buckets"
 import { MOTIVOS_RECHAZO, MOTIVO_RECHAZO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
 import { cn } from "@/lib/utils"
@@ -99,6 +101,7 @@ interface OpForm {
 
 export function VendedorLeads() {
   const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId, sinPerfil } = useVentas()
+  const toast = useToast()
   const { data: leadsData, loading, error, reload } = useLeads(vendedor.id)
   const { data: creditos, reload: reloadCred } = useCreditosLeads(vendedor.id, PERIODO_ACTUAL)
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
@@ -287,7 +290,7 @@ export function VendedorLeads() {
         })
       }
     } catch (e) {
-      setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo traer de la base" })
+      setAviso({ tipo: "error", texto: msgError(e, "No se pudo traer de la base") })
     } finally {
       setTrayendo(false)
     }
@@ -300,7 +303,7 @@ export function VendedorLeads() {
       setRechId(null)
       reload()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo rechazar")
+      toast.error(msgError(e, "No se pudo rechazar"))
     }
   }
 
@@ -309,7 +312,7 @@ export function VendedorLeads() {
       await reactivarLead(l.id)
       reload()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo reactivar")
+      toast.error(msgError(e, "No se pudo reactivar"))
     }
   }
 
@@ -322,7 +325,7 @@ export function VendedorLeads() {
         texto: `${l.nombre}: contacto ${n === 1 ? "registrado" : `×${n}`} sin respuesta. Queda para reintentar (filtro “Contactados”).`,
       })
     } catch (e) {
-      setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo registrar el contacto" })
+      setAviso({ tipo: "error", texto: msgError(e, "No se pudo registrar el contacto") })
     }
   }
 
@@ -331,7 +334,7 @@ export function VendedorLeads() {
       await limpiarContacto(l.id)
       reload()
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "No se pudo deshacer")
+      toast.error(msgError(e, "No se pudo deshacer"))
     }
   }
 
@@ -369,7 +372,7 @@ export function VendedorLeads() {
       reloadInsc()
       setAviso({ tipo: "ok", texto: `${nombre} quedó en la secuencia. Podés seguirlo en Secuencias de email.` })
     } catch (err) {
-      setSeqErr(err instanceof Error ? err.message : "No se pudo poner en la secuencia")
+      setSeqErr(msgError(err, "No se pudo poner en la secuencia"))
     } finally {
       setSeqSaving(false)
     }
@@ -442,7 +445,7 @@ export function VendedorLeads() {
           ".",
       })
     } catch (e) {
-      setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo asignar" })
+      setAviso({ tipo: "error", texto: msgError(e, "No se pudo asignar") })
     } finally {
       setAsignando(false)
     }
@@ -489,7 +492,7 @@ export function VendedorLeads() {
       setConvLead(null)
       reload()
     } catch (err) {
-      setErrForm(err instanceof Error ? err.message : "No se pudo crear la oportunidad")
+      setErrForm(msgError(err, "No se pudo crear la oportunidad"))
     } finally {
       setGuardando(false)
     }
