@@ -67,6 +67,12 @@ Correr en este orden si todavía no se corrieron:
 13. `secuencias-seguimiento.sql` — seguimiento infalible: pendiente_humano + ia_reunion.
 14. `leads-rechazo-nota.sql` — comentario libre al rechazar un lead (historial).
 15. `leads-contacto.sql` — intentos de contacto sin respuesta (reintentos + historial).
+16. `seguridad.sql` — **endurecimiento de seguridad (auditoría), CORRER SÍ O SÍ**:
+    bloquea auto-escalada a admin, oculta el refresh_token de Gmail al cliente,
+    exige email confirmado para enganchar login, y arregla políticas laxas.
+    Junto con esto, **redeployar las Edge Functions** `gmail-oauth`, `leads-ia` y
+    `secuencias-cron` (traen los fixes de CSRF, IDOR y fail-open). `secuencias-cron`
+    **necesita `CRON_SECRET` seteado** o queda cerrada (fail-closed).
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se

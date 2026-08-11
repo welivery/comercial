@@ -162,6 +162,19 @@ Deno.serve(async (req) => {
   const vendedorId = String(body.vendedorId ?? "")
   if (!vendedorId) return json(400, { error: "Falta vendedorId" })
 
+  // Autorización: el que llama solo puede generar leads para SU propia ficha
+  // (o ser admin). Sin esto, cualquier vendedor podría quemar los créditos de
+  // otro, escribirle leads y volcar su pipeline en el prompt (IDOR).
+  const { data: quienLlama } = await asUser
+    .from("vendedores")
+    .select("id, rol")
+    .eq("user_id", user.id)
+    .maybeSingle()
+  const esAdmin = quienLlama?.rol === "admin"
+  if (!esAdmin && quienLlama?.id !== vendedorId) {
+    return json(403, { error: "No autorizado a generar leads para otro vendedor" })
+  }
+
   const admin = createClient(url, service)
   const periodo = periodoActual()
 

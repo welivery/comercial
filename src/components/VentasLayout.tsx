@@ -47,7 +47,7 @@ const NAV_VENDEDOR: NavItem[] = [
   { to: "/secuencias", label: "Secuencias de email", icon: <Send size={17} /> },
 ]
 
-export function VentasLayout() {
+export function VentasLayout({ children }: { children?: React.ReactNode }) {
   const { rol, modo, setModo, vendedor, vendedores, verVendedorId, setVerVendedorId, usuario, signOut } =
     useVentas()
   const { tema, toggle } = useTheme()
@@ -175,7 +175,7 @@ export function VentasLayout() {
       </aside>
 
       <main className="min-w-0 flex-1 p-5 lg:p-7">
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
     </div>
   )

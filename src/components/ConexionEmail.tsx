@@ -3,13 +3,14 @@ import { Check, Link2, Mail, Unlink } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useEmailCuenta } from "@/hooks/useData"
-import { desconectarEmail, urlConectarGmail } from "@/data/api"
+import { desconectarEmail, iniciarConexionGmail } from "@/data/api"
 import { cn } from "@/lib/utils"
 
 // Tarjeta (compacta) para conectar/desconectar la casilla de Gmail del vendedor.
 export function ConexionEmail({ vendedorId, onEditar }: { vendedorId: string; onEditar?: () => void }) {
   const { data: cuenta, loading, reload } = useEmailCuenta(vendedorId)
   const [aviso, setAviso] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null)
+  const [conectando, setConectando] = useState(false)
 
   // Lee el resultado del OAuth (?email=ok/error/cancelado) y limpia la URL.
   useEffect(() => {
@@ -74,12 +75,18 @@ export function ConexionEmail({ vendedorId, onEditar }: { vendedorId: string; on
           variant="blue"
           size="sm"
           className="shrink-0"
-          disabled={!vendedorId}
-          onClick={() => {
-            window.location.href = urlConectarGmail(vendedorId)
+          disabled={!vendedorId || conectando}
+          onClick={async () => {
+            setConectando(true)
+            try {
+              window.location.href = await iniciarConexionGmail()
+            } catch (e) {
+              setAviso({ tipo: "error", texto: e instanceof Error ? e.message : "No se pudo iniciar la conexión" })
+              setConectando(false)
+            }
           }}
         >
-          <Link2 /> Conectar mi email
+          <Link2 /> {conectando ? "Abriendo Google…" : "Conectar mi email"}
         </Button>
       )}
     </Card>

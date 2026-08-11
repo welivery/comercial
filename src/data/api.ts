@@ -440,8 +440,16 @@ export async function importarDeudores(
     } else {
       const { error: e } = await supabase.from("clientes").update({ deuda: true }).in("id", idList)
       if (e) throw new Error(e.message)
+      // Agrupar por nota → un UPDATE por nota distinta (en vez de uno por id).
+      const idsPorNota = new Map<string, string[]>()
       for (const [id, nota] of notaPorId) {
-        await supabase.from("clientes").update({ deuda_nota: nota }).eq("id", id)
+        const arr = idsPorNota.get(nota) ?? []
+        arr.push(id)
+        idsPorNota.set(nota, arr)
+      }
+      for (const [nota, idsDeEsaNota] of idsPorNota) {
+        const { error: en } = await supabase.from("clientes").update({ deuda_nota: nota }).in("id", idsDeEsaNota)
+        if (en) throw new Error(en.message)
       }
     }
   }
@@ -1081,10 +1089,17 @@ export async function desconectarEmail(vendedorId: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
-// URL que inicia la conexión con Google (redirige a la Edge Function → Google).
-export function urlConectarGmail(vendedorId: string): string {
-  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined
-  return `${base ?? ""}/functions/v1/gmail-oauth?action=start&vid=${encodeURIComponent(vendedorId)}`
+// Inicia la conexión con Google. Llama a la Edge Function con el JWT del
+// vendedor (POST) → la función deriva el vendedor del token y devuelve la URL de
+// Google con un state firmado. Antes se navegaba con ?vid= por query, lo que
+// permitía enganchar la casilla de otro (CSRF); ahora la identidad la pone el
+// servidor a partir del token.
+export async function iniciarConexionGmail(): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("gmail-oauth", { body: { action: "mint" } })
+  if (error) throw new Error(await fnMsg(error))
+  const u = (data as { url?: string })?.url
+  if (!u) throw new Error("No se pudo iniciar la conexión con Google")
+  return u
 }
 
 // ─────────────── Automatización de secuencias (config org-wide) ───────────────
