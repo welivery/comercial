@@ -549,6 +549,36 @@ export interface LeadActividad {
   contactado_at: string | null
 }
 
+// Agregados de leads por vendedor (dashboard admin). Los calcula Postgres vía
+// RPC (metricas-leads-rpc.sql); "sin_trabajar" = pila real pendiente.
+export interface LeadsVendedorKpi {
+  vendedor_id: string
+  total: number
+  nuevos: number
+  sin_trabajar: number
+  en_secuencia: number
+  contactados: number
+  a_oportunidad: number
+  rechazados: number
+}
+
+export async function fetchLeadsPorVendedor(): Promise<LeadsVendedorKpi[]> {
+  const { data, error } = await supabase.rpc("metricas_leads_por_vendedor")
+  if (error) throw new Error(error.message)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (data ?? []).map((r: any) => ({
+    vendedor_id: r.vendedor_id,
+    total: Number(r.total ?? 0),
+    nuevos: Number(r.nuevos ?? 0),
+    sin_trabajar: Number(r.sin_trabajar ?? 0),
+    en_secuencia: Number(r.en_secuencia ?? 0),
+    contactados: Number(r.contactados ?? 0),
+    a_oportunidad: Number(r.a_oportunidad ?? 0),
+    rechazados: Number(r.rechazados ?? 0),
+  }))
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
 export async function fetchLeadsEquipo(): Promise<LeadActividad[]> {
   // El dashboard grafica hasta 6 meses hacia atrás y solo cuenta leads YA
   // contactados (estado != 'nuevo'). Acotamos la query a esa ventana en vez de

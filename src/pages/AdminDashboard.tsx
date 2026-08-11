@@ -1,15 +1,22 @@
 import { useMemo, useState } from "react"
-import { Link } from "react-router-dom"
-import { Activity, Clock, Plus, TrendingUp, Users } from "lucide-react"
+import { Link, useNavigate } from "react-router-dom"
+import { Activity, Clock, Plus, Search, TrendingUp, Users } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead, MonthPill } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
-import { BucketChip, Cargando, ErrorMsg, MixBar, Progress, VAvatar } from "@/components/widgets"
-import { useLeadsEquipo, useObjetivos, useOportunidades, useVendedores } from "@/hooks/useData"
-import type { LeadActividad, VendedorRow } from "@/data/api"
+import { BucketChip, Cargando, ErrorMsg, Progress, VAvatar } from "@/components/widgets"
+import {
+  useLeadsEquipo,
+  useLeadsPorVendedor,
+  useObjetivos,
+  useOportunidades,
+  useVendedores,
+} from "@/hooks/useData"
+import type { LeadActividad, LeadsVendedorKpi, VendedorRow } from "@/data/api"
+import { useVentas } from "@/store"
 import { avanceEquipo, avanceVendedor, embudo } from "@/lib/metrics"
-import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
+import { segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { ESTADO_COLOR, ESTADO_LABEL, PERIODO_ACTUAL } from "@/lib/display"
 import { cn } from "@/lib/utils"
 
@@ -18,6 +25,9 @@ export function AdminDashboard() {
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const { data: oportunidades, loading, error } = useOportunidades()
   const { data: actividadLeads } = useLeadsEquipo()
+  const { data: leadsVend } = useLeadsPorVendedor()
+  const { setVerVendedorId, setModo } = useVentas()
+  const navigate = useNavigate()
   const segsReg = useSegmentos()
   const activos = useMemo(() => segmentosActivos(segsReg), [segsReg])
   const ops = oportunidades ?? []
@@ -37,6 +47,13 @@ export function AdminDashboard() {
       }),
     [vends, ops, objs, activos]
   )
+
+  // Abre el "Buscar leads" del vendedor elegido (drill-down desde el dashboard).
+  function verLeadsDe(vendedorId: string) {
+    setVerVendedorId(vendedorId)
+    setModo("vendedor")
+    navigate("/leads")
+  }
 
   if (loading) return <Cargando que="el dashboard" />
   if (error) return <ErrorMsg msg={error} />
@@ -103,9 +120,7 @@ export function AdminDashboard() {
         <Card className="overflow-hidden">
           <div className="p-4 pb-1">
             <h2 className="text-[15px] font-semibold text-navy">Avance por vendedor</h2>
-            <p className="mt-0.5 text-xs text-slate">
-              Reuniones efectivas del mes · objetivo y mezcla de tipos
-            </p>
+            <p className="mt-0.5 text-xs text-slate">Reuniones efectivas del mes · objetivo y cierre</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
@@ -114,7 +129,6 @@ export function AdminDashboard() {
                   <th className="px-4 py-2.5 font-medium">Vendedor</th>
                   <th className="px-4 py-2.5 font-medium">Reuniones efectivas</th>
                   <th className="px-4 py-2.5 font-medium">Cierre</th>
-                  <th className="px-4 py-2.5 font-medium">Mezcla</th>
                 </tr>
               </thead>
               <tbody>
@@ -150,9 +164,6 @@ export function AdminDashboard() {
                         {av.tasaCierre}%
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <MixBar mix={av.mix} className="w-[120px]" />
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -160,29 +171,8 @@ export function AdminDashboard() {
           </div>
         </Card>
 
-        {/* Mix del equipo + embudo */}
+        {/* Embudo */}
         <div className="grid gap-4">
-          <Card className="p-4">
-            <h2 className="text-[14px] font-semibold text-navy">Mezcla de tipos · equipo</h2>
-            <p className="mb-3.5 mt-0.5 text-xs text-slate">Segmentos de cliente · real vs objetivo</p>
-            <MixBar mix={eq.mix} className="h-3.5" />
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
-              {eq.mix.map((m) => (
-                <div key={m.bucket} className="flex items-center gap-1.5 text-[12px]">
-                  <span className="size-2 rounded-full" style={{ background: segColor(m.bucket, activos) }} />
-                  <b className="font-semibold text-ink">{segLabel(m.bucket, activos)}</b>
-                  <span className="text-slate">
-                    {m.pct}% · obj {m.objetivoPct}%
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-[11.5px] leading-relaxed text-slate">
-              Segmentos por volumen de envíos (configurables en Objetivos):{" "}
-              {activos.map((s) => s.nombre).join(" → ")}.
-            </p>
-          </Card>
-
           <Card className="p-4">
             <h2 className="mb-3.5 text-[14px] font-semibold text-navy">Embudo del mes</h2>
             <div className="flex flex-col gap-2">
@@ -213,6 +203,8 @@ export function AdminDashboard() {
         </div>
       </div>
 
+      <LeadsPorVendedor vendedores={vends} kpis={leadsVend ?? []} onVer={verLeadsDe} />
+
       <ActividadLeads vendedores={vends} actividad={actividadLeads ?? []} />
 
       <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
@@ -225,6 +217,143 @@ export function AdminDashboard() {
         </p>
       </div>
     </>
+  )
+}
+
+// ─────────────────────── Leads por vendedor (carga de trabajo) ────────────────
+// Cuántos leads tiene cada vendedor en "Buscar leads", cuántos trabajó y cuántos
+// pasó a oportunidad. "Por trabajar" = pila pendiente (nuevo, sin contacto ni
+// secuencia). Es la foto de dónde hay backlog y quién está avanzando.
+function LeadsPorVendedor({
+  vendedores,
+  kpis,
+  onVer,
+}: {
+  vendedores: VendedorRow[]
+  kpis: LeadsVendedorKpi[]
+  onVer: (vendedorId: string) => void
+}) {
+  const porId = new Map(kpis.map((k) => [k.vendedor_id, k]))
+  const VACIO: Omit<LeadsVendedorKpi, "vendedor_id"> = {
+    total: 0, nuevos: 0, sin_trabajar: 0, en_secuencia: 0, contactados: 0, a_oportunidad: 0, rechazados: 0,
+  }
+  const filas = vendedores
+    .map((v) => ({ v, k: { ...VACIO, ...(porId.get(v.id) ?? {}) } }))
+    .sort((a, b) => b.k.total - a.k.total)
+
+  const tot = filas.reduce(
+    (acc, { k }) => ({
+      total: acc.total + k.total,
+      sin_trabajar: acc.sin_trabajar + k.sin_trabajar,
+      trabajados: acc.trabajados + (k.total - k.sin_trabajar),
+      a_oportunidad: acc.a_oportunidad + k.a_oportunidad,
+    }),
+    { total: 0, sin_trabajar: 0, trabajados: 0, a_oportunidad: 0 }
+  )
+  const pctEquipo = tot.total ? Math.round((tot.trabajados / tot.total) * 100) : 0
+
+  return (
+    <Card className="mt-4 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3 p-4 pb-2">
+        <span className="grid size-8 place-items-center rounded-lg bg-[#EEF3FE]">
+          <Search size={16} className="text-blue" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-semibold text-navy">Leads por vendedor</h2>
+          <p className="text-xs text-slate">Carga de trabajo real · cuántos tiene, cuántos trabajó y cuántos pasó a oportunidad</p>
+        </div>
+        {/* Resumen del equipo */}
+        <div className="flex flex-wrap gap-2">
+          <ResumenChip label="Total leads" valor={tot.total} color="#152A4F" />
+          <ResumenChip label="Por trabajar" valor={tot.sin_trabajar} color="#F2563A" />
+          <ResumenChip label="Trabajados" valor={`${tot.trabajados} · ${pctEquipo}%`} color="#2F5BE6" />
+          <ResumenChip label="A oportunidad" valor={tot.a_oportunidad} color="#1E9E6A" />
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
+              <th className="px-4 py-2.5 font-medium">Vendedor</th>
+              <th className="px-4 py-2.5 text-right font-medium">Total</th>
+              <th className="px-4 py-2.5 text-right font-medium">Por trabajar</th>
+              <th className="px-4 py-2.5 font-medium">Trabajados</th>
+              <th className="px-4 py-2.5 text-right font-medium">En secuencia</th>
+              <th className="px-4 py-2.5 text-right font-medium">A oportunidad</th>
+              <th className="px-4 py-2.5 text-right font-medium">Rechazados</th>
+              <th className="px-4 py-2.5" />
+            </tr>
+          </thead>
+          <tbody>
+            {filas.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-6 text-center text-[13px] text-slate">
+                  No hay vendedores cargados.
+                </td>
+              </tr>
+            ) : (
+              filas.map(({ v, k }) => {
+                const trabajados = k.total - k.sin_trabajar
+                const pct = k.total ? Math.round((trabajados / k.total) * 100) : 0
+                return (
+                  <tr key={v.id} className="border-t border-border hover:bg-mist/40">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <VAvatar iniciales={v.iniciales} />
+                        <span className="text-[13px] font-medium text-ink">{v.nombre}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-[13px] font-semibold tabular-nums text-ink">{k.total}</td>
+                    <td className="px-4 py-3 text-right">
+                      <span
+                        className={cn(
+                          "rounded-md px-2 py-0.5 text-[12px] font-semibold tabular-nums",
+                          k.sin_trabajar > 0 ? "bg-[#FDECE9] text-[#c23c22]" : "text-muted"
+                        )}
+                      >
+                        {k.sin_trabajar}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <Progress value={trabajados} max={k.total || 1} color="#2F5BE6" className="w-[90px]" />
+                        <span className="w-16 text-[12px] tabular-nums text-slate">
+                          {trabajados}/{k.total} · {pct}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right text-[12.5px] tabular-nums text-slate">{k.en_secuencia}</td>
+                    <td className="px-4 py-3 text-right text-[13px] font-semibold tabular-nums text-success">
+                      {k.a_oportunidad}
+                    </td>
+                    <td className="px-4 py-3 text-right text-[12.5px] tabular-nums text-slate">{k.rechazados}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => onVer(v.id)}
+                        className="rounded-md px-2 py-1 text-[12px] font-medium text-blue hover:bg-[#EEF3FE]"
+                      >
+                        Ver leads
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
+function ResumenChip({ label, valor, color }: { label: string; valor: React.ReactNode; color: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-mist/40 px-3 py-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-slate">{label}</div>
+      <div className="text-[15px] font-semibold tabular-nums" style={{ color }}>
+        {valor}
+      </div>
+    </div>
   )
 }
 
