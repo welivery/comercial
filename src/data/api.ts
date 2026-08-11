@@ -1050,6 +1050,17 @@ export async function eliminarInscripcion(id: string): Promise<void> {
   if (error) throw new Error(error.message)
 }
 
+// Marca la inscripción como atendida: baja el flag de "pendiente" cuando el
+// vendedor ya respondió por fuera de la app (directo en Gmail). RLS permite al
+// vendedor editar su propia inscripción, así que no necesita Edge Function.
+export async function marcarRespondido(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("secuencia_inscripciones")
+    .update({ pendiente_humano: false, ultima_respuesta_manual_at: new Date().toISOString() })
+    .eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
 // ─────────────────────────── Conexión de email (OAuth) ───────────────────────────
 // La casilla que el vendedor conecta para enviar secuencias. El intercambio del
 // código y el guardado del token lo hace la Edge Function `gmail-oauth`

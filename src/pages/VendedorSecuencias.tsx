@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom"
 import {
   Bot,
   Check,
+  CheckCheck,
   Copy,
   Eye,
   Info,
@@ -40,6 +41,7 @@ import {
   enviarAhoraInscripcion,
   fetchHilo,
   inscribir,
+  marcarRespondido,
   pasarContactoAOportunidad,
   rechazarLead,
   responderInscripcion,
@@ -402,6 +404,16 @@ export function VendedorSecuencias() {
       setRespErr(err instanceof Error ? err.message : "No se pudo enviar")
     } finally {
       setRespSaving(false)
+    }
+  }
+  // Baja el rojo de "pendiente" cuando el vendedor ya respondió por fuera de la
+  // app (directo en Gmail). El cron igual lo detecta solo, pero esto es inmediato.
+  async function marcarAtendido(ins: SecuenciaInscripcion) {
+    try {
+      await marcarRespondido(ins.id)
+      reloadInsc()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "No se pudo marcar como respondido")
     }
   }
 
@@ -793,7 +805,7 @@ export function VendedorSecuencias() {
                     <td className="px-4 py-3">
                       {ins.pendiente_humano ? (
                         <span className="rounded-md bg-[#FBE2E2] px-2 py-0.5 text-[11px] font-semibold text-error">
-                          {ins.ia_reunion ? "📅 Confirmó reunión · respondé" : "Respondió · sin responder"}
+                          {ins.ia_reunion ? "📅 Confirmó reunión · respondé" : "📨 Te respondió · respondé"}
                         </span>
                       ) : (
                         <div className="flex flex-col items-start gap-1">
@@ -835,6 +847,15 @@ export function VendedorSecuencias() {
                             <Button size="sm" variant="blue" onClick={() => abrirOportunidad(ins)}>
                               <Plus /> Oportunidad
                             </Button>
+                            {ins.pendiente_humano && (
+                              <button
+                                onClick={() => marcarAtendido(ins)}
+                                title="Ya respondí (desde Gmail) — sacar el aviso rojo"
+                                className="grid size-8 place-items-center rounded-md text-slate hover:bg-[#E4F5EC] hover:text-success"
+                              >
+                                <CheckCheck size={15} />
+                              </button>
+                            )}
                             <button
                               onClick={() => noInteresado(ins)}
                               title="No sirvió — corta la secuencia y rechaza el lead"
