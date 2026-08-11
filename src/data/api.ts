@@ -703,6 +703,22 @@ export async function marcarContactado(id: string, intentosActuales: number): Pr
   return n
 }
 
+// Edita los datos de contacto de un lead (persona, email, teléfono, web) en las
+// COLUMNAS reales de la base — no en el texto del motivo. Así el dato que el
+// vendedor consigue queda consistente y usable (secuencias, mailto/tel) al toque.
+// Los strings vacíos se guardan como null para no dejar "" sueltos.
+export async function actualizarLead(
+  id: string,
+  patch: Partial<{ contacto: string; email: string; telefono: string; web: string }>
+): Promise<void> {
+  const limpio: Record<string, string | null> = { updated_at: new Date().toISOString() }
+  for (const [k, v] of Object.entries(patch)) {
+    limpio[k] = typeof v === "string" ? v.trim() || null : null
+  }
+  const { error } = await supabase.from("leads").update(limpio).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
 // Borra el último registro de contacto (deshacer un click por error).
 export async function limpiarContacto(id: string): Promise<void> {
   const { error } = await supabase

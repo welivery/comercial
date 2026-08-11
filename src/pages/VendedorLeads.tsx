@@ -5,6 +5,7 @@ import {
   Building2,
   Check,
   Mail,
+  Pencil,
   Phone,
   PhoneOutgoing,
   Plus,
@@ -21,6 +22,7 @@ import { BucketChip, Cargando } from "@/components/widgets"
 import { useVentas } from "@/store"
 import { useCreditosLeads, useInscripciones, useLeads, useObjetivos, useSecuencias } from "@/hooks/useData"
 import {
+  actualizarLead,
   asignarLeads,
   convertirLead,
   inscribir,
@@ -165,6 +167,12 @@ export function VendedorLeads() {
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
   const [rechNota, setRechNota] = useState("")
+
+  // Modal "Editar datos" del lead (persona, email, teléfono, web).
+  const [editLead, setEditLead] = useState<Lead | null>(null)
+  const [editForm, setEditForm] = useState({ contacto: "", email: "", telefono: "", web: "" })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editErr, setEditErr] = useState<string | null>(null)
 
   const [convLead, setConvLead] = useState<Lead | null>(null)
   const [form, setForm] = useState<OpForm | null>(null)
@@ -313,6 +321,36 @@ export function VendedorLeads() {
       reload()
     } catch (e) {
       toast.error(msgError(e, "No se pudo reactivar"))
+    }
+  }
+
+  function abrirEditar(l: Lead) {
+    setEditLead(l)
+    setEditErr(null)
+    // Prefill desde las columnas o, para leads viejos, desde el texto del motivo.
+    setEditForm({
+      contacto: contactoDe(l) ?? "",
+      email: emailDe(l) ?? "",
+      telefono: telDe(l) ?? "",
+      web: l.web ?? "",
+    })
+  }
+
+  async function guardarEdicion(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editLead) return
+    setEditSaving(true)
+    setEditErr(null)
+    try {
+      await actualizarLead(editLead.id, editForm)
+      const nombre = editLead.nombre
+      setEditLead(null)
+      reload()
+      toast.ok(`Datos de ${nombre} actualizados.`)
+    } catch (err) {
+      setEditErr(msgError(err, "No se pudieron guardar los datos"))
+    } finally {
+      setEditSaving(false)
     }
   }
 
@@ -874,6 +912,9 @@ export function VendedorLeads() {
                               </IconBtn>
                             ) : (
                               <>
+                                <IconBtn title="Editar datos (teléfono, email, contacto)" onClick={() => abrirEditar(l)}>
+                                  <Pencil size={15} />
+                                </IconBtn>
                                 <IconBtn title="Pasar a oportunidad" tone="blue" onClick={() => abrirConvertir(l)}>
                                   <Plus size={15} />
                                 </IconBtn>
@@ -1040,6 +1081,66 @@ export function VendedorLeads() {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Modal: editar datos del lead */}
+      <Modal open={!!editLead} onClose={() => setEditLead(null)} title="Editar datos del lead">
+        {editLead && (
+          <form onSubmit={guardarEdicion} className="flex flex-col gap-3.5">
+            <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+              Completá o corregí los datos de <b className="text-ink">{editLead.nombre}</b>. Quedan guardados en la
+              base y listos para usar (secuencias, llamada, mail).
+            </p>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Persona de contacto</span>
+              <input
+                value={editForm.contacto}
+                onChange={(e) => setEditForm({ ...editForm, contacto: e.target.value })}
+                className="inp"
+                placeholder="Nombre y apellido"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-medium text-slate">Teléfono</span>
+                <input
+                  value={editForm.telefono}
+                  onChange={(e) => setEditForm({ ...editForm, telefono: e.target.value })}
+                  className="inp"
+                  placeholder="+56 9 1234 5678"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[12px] font-medium text-slate">Email</span>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="inp"
+                  placeholder="contacto@empresa.cl"
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Sitio web</span>
+              <input
+                value={editForm.web}
+                onChange={(e) => setEditForm({ ...editForm, web: e.target.value })}
+                className="inp"
+                placeholder="tienda.cl"
+              />
+            </label>
+            {editErr && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{editErr}</div>}
+            <div className="mt-1 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setEditLead(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="blue" disabled={editSaving}>
+                {editSaving ? "Guardando…" : "Guardar"}
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Modal: poner en secuencia (individual) */}
