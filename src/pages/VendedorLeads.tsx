@@ -4,7 +4,9 @@ import {
   Ban,
   Building2,
   Check,
+  ExternalLink,
   Mail,
+  Maximize2,
   Pencil,
   Phone,
   PhoneOutgoing,
@@ -167,6 +169,9 @@ export function VendedorLeads() {
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
   const [rechNota, setRechNota] = useState("")
+
+  // Modal "Detalle" del lead (ver toda la info sin cortes).
+  const [detalleLead, setDetalleLead] = useState<Lead | null>(null)
 
   // Modal "Editar datos" del lead (persona, email, teléfono, web).
   const [editLead, setEditLead] = useState<Lead | null>(null)
@@ -810,14 +815,18 @@ export function VendedorLeads() {
                             </span>
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <span
+                                <button
+                                  type="button"
+                                  onClick={() => setDetalleLead(l)}
+                                  title="Ver todo el detalle del lead"
                                   className={cn(
-                                    "text-[13px] font-semibold text-ink",
-                                    l.estado === "rechazado" && "text-slate line-through"
+                                    "group inline-flex items-center gap-1 text-[13px] font-semibold text-ink hover:text-blue",
+                                    l.estado === "rechazado" && "text-slate line-through hover:text-slate"
                                   )}
                                 >
                                   {l.nombre}
-                                </span>
+                                  <Maximize2 size={11} className="text-muted group-hover:text-blue" />
+                                </button>
                                 <BucketChip bucket={l.bucket} short />
                                 {l.estado === "nuevo" &&
                                   (l.reconquista ? (
@@ -1083,6 +1092,152 @@ export function VendedorLeads() {
         </div>
       </Modal>
 
+      {/* Modal: detalle del lead (ver todo) */}
+      <Modal open={!!detalleLead} onClose={() => setDetalleLead(null)} title="Detalle del lead">
+        {detalleLead && (
+          <div className="flex flex-col gap-4">
+            {/* Encabezado */}
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-mist text-[14px] font-semibold text-navy">
+                {detalleLead.iniciales}
+              </span>
+              <div className="min-w-0">
+                <div className="text-[15px] font-semibold text-ink">{detalleLead.nombre}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <BucketChip bucket={detalleLead.bucket} short />
+                  {detalleLead.reconquista && (
+                    <span className="rounded-full bg-[#FBEFD4] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#a5741a]">
+                      Reconquista
+                    </span>
+                  )}
+                  {!detalleLead.reconquista && detalleLead.estado === "nuevo" && (
+                    <span className="rounded-full bg-[#DFF2E9] px-1.5 py-0.5 text-[10.5px] font-semibold text-success">
+                      {detalleLead.fit}% fit
+                    </span>
+                  )}
+                  <span className="rounded-full bg-mist px-1.5 py-0.5 text-[10.5px] font-semibold text-slate">
+                    {detalleLead.estado === "nuevo"
+                      ? "Sin clasificar"
+                      : detalleLead.estado === "convertido"
+                        ? "A oportunidad"
+                        : "Rechazado"}
+                  </span>
+                  {enSecuencia(detalleLead.id) && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF3FE] px-1.5 py-0.5 text-[10.5px] font-semibold text-blue">
+                      <Send size={10} /> En secuencia
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Motivo completo (sin cortes) */}
+            {motivoCorto(detalleLead.motivo) && (
+              <Detalle titulo="Motivo / contexto">
+                <p className="whitespace-pre-line text-[13px] leading-relaxed text-ink">
+                  {motivoCorto(detalleLead.motivo)}
+                </p>
+              </Detalle>
+            )}
+
+            {/* Datos de contacto */}
+            <Detalle titulo="Datos de contacto">
+              <div className="grid gap-1.5 text-[13px]">
+                <CampoDet label="Persona" valor={contactoDe(detalleLead)} />
+                <CampoDet
+                  label="Email"
+                  valor={emailDe(detalleLead)}
+                  href={emailDe(detalleLead) ? `mailto:${emailDe(detalleLead)}` : undefined}
+                />
+                <CampoDet
+                  label="Teléfono"
+                  valor={telDe(detalleLead)}
+                  href={telDe(detalleLead) ? `tel:${telDe(detalleLead)!.replace(/\s/g, "")}` : undefined}
+                />
+                <CampoDet
+                  label="Web"
+                  valor={detalleLead.web}
+                  href={
+                    detalleLead.web
+                      ? detalleLead.web.startsWith("http")
+                        ? detalleLead.web
+                        : `https://${detalleLead.web}`
+                      : undefined
+                  }
+                />
+              </div>
+            </Detalle>
+
+            {/* Origen + fuentes */}
+            <Detalle titulo="Origen">
+              <div className="text-[13px] text-slate">
+                {detalleLead.origen === "ia" ? "Encontrado con IA" : "De tu base"}
+              </div>
+              {detalleLead.fuentes.length > 0 && (
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {detalleLead.fuentes.map((f, i) => (
+                    <li key={i} className="text-[12.5px] text-slate">
+                      {f.url ? (
+                        <a
+                          href={f.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-blue hover:underline"
+                        >
+                          {f.detalle} <ExternalLink size={11} />
+                        </a>
+                      ) : (
+                        f.detalle
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Detalle>
+
+            {/* Seguimiento / historial */}
+            <Detalle titulo="Seguimiento">
+              <div className="grid gap-1.5 text-[13px]">
+                <CampoDet
+                  label="Contactos sin rta"
+                  valor={
+                    detalleLead.contactos_intentos > 0
+                      ? `${detalleLead.contactos_intentos} · último ${haceCuanto(detalleLead.ultimo_contacto_at)}`
+                      : "—"
+                  }
+                />
+                <CampoDet label="Agregado" valor={new Date(detalleLead.created_at).toLocaleDateString("es-CL")} />
+              </div>
+              {detalleLead.estado === "rechazado" && (
+                <div className="mt-2 rounded-lg border-l-2 border-error/40 bg-[#FBE2E2]/50 px-2.5 py-1.5 text-[12.5px] text-[#8a2f2f]">
+                  <b>Rechazado</b>
+                  {detalleLead.motivo_rechazo ? ` · ${MOTIVO_RECHAZO_LABEL[detalleLead.motivo_rechazo]}` : ""}
+                  {detalleLead.rechazo_nota ? ` — ${detalleLead.rechazo_nota}` : ""}
+                </div>
+              )}
+            </Detalle>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDetalleLead(null)}>
+                Cerrar
+              </Button>
+              {detalleLead.estado === "nuevo" && (
+                <Button
+                  variant="blue"
+                  onClick={() => {
+                    const l = detalleLead
+                    setDetalleLead(null)
+                    abrirEditar(l)
+                  }}
+                >
+                  <Pencil size={15} /> Editar datos
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Modal: editar datos del lead */}
       <Modal open={!!editLead} onClose={() => setEditLead(null)} title="Editar datos del lead">
         {editLead && (
@@ -1249,6 +1404,34 @@ export function VendedorLeads() {
 
       <style>{`.inp{border:1px solid var(--color-input);border-radius:8px;padding:8px 12px;font-size:14px;color:var(--color-ink);outline:none;width:100%;background:#fff}.inp:focus{border-color:var(--color-blue)}`}</style>
     </>
+  )
+}
+
+function Detalle({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-mist/30 p-3">
+      <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate">{titulo}</div>
+      {children}
+    </div>
+  )
+}
+
+function CampoDet({ label, valor, href }: { label: string; valor?: string | null; href?: string }) {
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="w-[110px] shrink-0 text-[12px] text-slate">{label}</span>
+      {valor ? (
+        href ? (
+          <a href={href} className="min-w-0 truncate font-medium text-blue hover:underline">
+            {valor}
+          </a>
+        ) : (
+          <span className="min-w-0 break-words font-medium text-ink">{valor}</span>
+        )
+      ) : (
+        <span className="text-muted">—</span>
+      )}
+    </div>
   )
 }
 
