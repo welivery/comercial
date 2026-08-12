@@ -81,6 +81,9 @@ Correr en este orden si todavía no se corrieron:
     (activo / días / secuencia por defecto). Arranca APAGADO. Junto con esto,
     **redeployar `secuencias-cron`** (trae el paso que inscribe solo los leads
     "sin tocar"). Requiere el envío automático prendido y casilla conectada.
+20. `bucket-text.sql` — **arreglo**: pasa las columnas `bucket` de enum fijo a
+    text (los segmentos son configurables). Sin esto falla al clasificar como
+    'chico' o cualquier segmento nuevo. Solo SQL, sin redeploy.
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se
