@@ -19,6 +19,7 @@ import {
   fetchOportunidades,
   fetchPasos,
   fetchSecuencias,
+  fetchSecuenciasCompartidas,
   fetchUsuarios,
   fetchVendedores,
 } from "@/data/api"
@@ -86,3 +87,4 @@ export const useInscripcionesEquipo = () => useAsync(() => fetchInscripcionesEqu
 export const useEmailCuenta = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchEmailCuenta(vendedorId) : Promise.resolve(null)), [vendedorId])
 export const useConfigSecuencias = () => useAsync(() => fetchConfigSecuencias(), [])
+export const useSecuenciasCompartidas = () => useAsync(() => fetchSecuenciasCompartidas(), [])

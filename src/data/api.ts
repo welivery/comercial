@@ -963,6 +963,18 @@ export async function fetchSecuencias(vendedorId: string): Promise<Secuencia[]> 
   return check(data, error).map(mapSecuencia)
 }
 
+// Plantillas compartidas del equipo (vendedor_id null) activas — para que el
+// admin elija la secuencia por defecto del seguimiento automático.
+export async function fetchSecuenciasCompartidas(): Promise<Secuencia[]> {
+  const { data, error } = await supabase
+    .from("secuencias")
+    .select("*")
+    .is("vendedor_id", null)
+    .eq("activo", true)
+    .order("created_at", { ascending: false })
+  return check(data, error).map(mapSecuencia)
+}
+
 export async function fetchPasos(secuenciaId: string): Promise<SecuenciaPaso[]> {
   const { data, error } = await supabase
     .from("secuencia_pasos")
@@ -1171,7 +1183,7 @@ export async function fetchConfigSecuencias(): Promise<ConfigSecuencias> {
   const { data, error } = await supabase
     .from("config_ventas")
     .select(
-      "secuencias_envio_activo, secuencias_ia_activa, secuencias_ia_autonomia, secuencias_ia_limite_mensual, secuencias_max_dia_casilla, secuencias_min_minutos"
+      "secuencias_envio_activo, secuencias_ia_activa, secuencias_ia_autonomia, secuencias_ia_limite_mensual, secuencias_max_dia_casilla, secuencias_min_minutos, seguimiento_auto_activo, seguimiento_auto_dias, seguimiento_auto_secuencia_id"
     )
     .eq("id", 1)
     .maybeSingle()
@@ -1183,6 +1195,9 @@ export async function fetchConfigSecuencias(): Promise<ConfigSecuencias> {
     ia_limite_mensual: data?.secuencias_ia_limite_mensual ?? 200,
     max_dia_casilla: data?.secuencias_max_dia_casilla ?? 30,
     min_minutos: data?.secuencias_min_minutos ?? 3,
+    seg_auto_activo: data?.seguimiento_auto_activo ?? false,
+    seg_auto_dias: data?.seguimiento_auto_dias ?? 3,
+    seg_auto_secuencia_id: data?.seguimiento_auto_secuencia_id ?? null,
   }
 }
 
@@ -1196,6 +1211,9 @@ export async function guardarConfigSecuencias(c: ConfigSecuencias): Promise<void
       secuencias_ia_limite_mensual: c.ia_limite_mensual,
       secuencias_max_dia_casilla: c.max_dia_casilla,
       secuencias_min_minutos: c.min_minutos,
+      seguimiento_auto_activo: c.seg_auto_activo,
+      seguimiento_auto_dias: c.seg_auto_dias,
+      seguimiento_auto_secuencia_id: c.seg_auto_secuencia_id,
     })
     .eq("id", 1)
   if (error) throw new Error(error.message)

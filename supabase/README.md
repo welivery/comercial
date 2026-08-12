@@ -77,6 +77,10 @@ Correr en este orden si todavía no se corrieron:
     (evita perder aperturas concurrentes). Redeployar la función `track`.
 18. `metricas-leads-rpc.sql` — agregados de leads por vendedor para el dashboard
     admin (RPC, solo lectura, gateada a admin). Solo SQL, sin redeploy.
+19. `seguimiento-auto.sql` — seguimiento automático opt-in: columnas de config
+    (activo / días / secuencia por defecto). Arranca APAGADO. Junto con esto,
+    **redeployar `secuencias-cron`** (trae el paso que inscribe solo los leads
+    "sin tocar"). Requiere el envío automático prendido y casilla conectada.
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se

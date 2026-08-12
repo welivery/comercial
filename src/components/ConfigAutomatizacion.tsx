@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react"
-import { Bot, Check, Send, Sparkles } from "lucide-react"
+import { Bot, Check, ListChecks, Send, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { useConfigSecuencias } from "@/hooks/useData"
+import { useConfigSecuencias, useSecuenciasCompartidas } from "@/hooks/useData"
 import { guardarConfigSecuencias } from "@/data/api"
 import { msgError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
@@ -12,6 +12,7 @@ import type { ConfigSecuencias } from "@/lib/types"
 // respuestas con IA. Todo arranca apagado (no envía ni gasta IA hasta acá).
 export function ConfigAutomatizacion() {
   const { data, loading } = useConfigSecuencias()
+  const { data: compartidas } = useSecuenciasCompartidas()
   const [cfg, setCfg] = useState<ConfigSecuencias | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
@@ -123,6 +124,51 @@ export function ConfigAutomatizacion() {
             />
             <span className="text-[11.5px] text-slate">(control de costo)</span>
           </label>
+        </div>
+      )}
+
+      <Fila
+        icon={<ListChecks size={16} className="text-blue" />}
+        titulo="Seguimiento automático de leads"
+        detalle="Inscribe solo, en la secuencia elegida, a los leads 'sin tocar' (nuevos, sin contacto ni secuencia) que pasaron X días. Garantiza al menos un primer seguimiento sin depender del vendedor."
+        on={cfg.seg_auto_activo}
+        onToggle={() => setCfg({ ...cfg, seg_auto_activo: !cfg.seg_auto_activo })}
+      />
+
+      {cfg.seg_auto_activo && (
+        <div className="ml-1 flex flex-col gap-3 rounded-xl bg-mist/50 p-3.5 text-[12.5px] text-ink">
+          <label className="flex flex-wrap items-center gap-2">
+            Inscribir después de
+            <input
+              type="number"
+              min={1}
+              value={cfg.seg_auto_dias}
+              onChange={(e) => setCfg({ ...cfg, seg_auto_dias: Number(e.target.value) })}
+              className="w-[64px] rounded-lg border border-input bg-white px-2.5 py-1.5 text-[13px] tabular-nums outline-none focus:border-blue"
+            />
+            días sin que el vendedor lo toque.
+          </label>
+          <label className="flex flex-wrap items-center gap-2">
+            Secuencia por defecto:
+            <select
+              value={cfg.seg_auto_secuencia_id ?? ""}
+              onChange={(e) => setCfg({ ...cfg, seg_auto_secuencia_id: e.target.value || null })}
+              className="min-w-[200px] rounded-lg border border-input bg-white px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-blue"
+            >
+              <option value="">— Elegí una plantilla compartida —</option>
+              {(compartidas ?? []).map((s) => (
+                <option key={s.id} value={s.id}>{s.nombre}</option>
+              ))}
+            </select>
+          </label>
+          {(compartidas ?? []).length === 0 && (
+            <span className="text-[11.5px] text-warning">
+              No hay plantillas compartidas activas. Creá una secuencia del equipo primero.
+            </span>
+          )}
+          <span className="text-[11.5px] text-slate">
+            Solo inscribe leads con email y cuyo vendedor tenga la casilla conectada. Requiere el envío automático prendido.
+          </span>
         </div>
       )}
 

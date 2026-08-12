@@ -224,6 +224,10 @@ export interface ConfigSecuencias {
   ia_limite_mensual: number // tope de respuestas clasificadas por mes (control de costo)
   max_dia_casilla: number // tope de mails por día por casilla (reputación)
   min_minutos: number // minutos mínimos entre mails de una misma casilla (anti-spam)
+  // Seguimiento automático (opt-in): inscribe solo los leads "sin tocar" tras N días.
+  seg_auto_activo: boolean
+  seg_auto_dias: number
+  seg_auto_secuencia_id: string | null
 }
 
 // Casilla de email conectada por el vendedor (OAuth Google). El refresh_token
