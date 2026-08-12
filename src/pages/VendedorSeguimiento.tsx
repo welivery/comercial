@@ -1,18 +1,19 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { CheckCircle2, Flame, PartyPopper, Phone, PhoneOutgoing, Plus, Send, Sparkles } from "lucide-react"
+import { Ban, CheckCircle2, Flame, PartyPopper, Phone, PhoneOutgoing, Plus, Send, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useOportunidades, useSecuencias } from "@/hooks/useData"
-import { inscribir, marcarContactado } from "@/data/api"
+import { inscribir, marcarContactado, rechazarLead } from "@/data/api"
 import { msgError } from "@/lib/errors"
-import { ESTADO_LABEL } from "@/lib/display"
+import { ESTADO_LABEL, MOTIVOS_RECHAZO } from "@/lib/display"
 import { cn } from "@/lib/utils"
-import type { EstadoOportunidad, Lead, Oportunidad, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
+import type { EstadoOportunidad, Lead, MotivoRechazo, Oportunidad, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
 
 // ── Umbrales (defaults sensatos; configurables por el admin más adelante) ──────
 const DIAS_REINTENTO = 3 // días desde el último contacto para volver a estar "pendiente"
@@ -100,6 +101,12 @@ export function VendedorSeguimiento() {
 
   const [filtro, setFiltro] = useState<Tipo | "todos">("todos")
   const [regContacto, setRegContacto] = useState<string | null>(null)
+
+  // Modal "Rechazar / descartar" el lead (con motivo + nota).
+  const [rechLead, setRechLead] = useState<Lead | null>(null)
+  const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
+  const [rechNota, setRechNota] = useState("")
+  const [rechSaving, setRechSaving] = useState(false)
 
   const items = useMemo<Item[]>(() => {
     const out: Item[] = []
@@ -195,6 +202,28 @@ export function VendedorSeguimiento() {
       toast.error(msgError(e, "No se pudo registrar"))
     } finally {
       setRegContacto(null)
+    }
+  }
+
+  function abrirRechazo(l: Lead) {
+    setRechLead(l)
+    setRechMotivo("no_interesado")
+    setRechNota("")
+  }
+  async function confirmarRechazo(e: React.FormEvent) {
+    e.preventDefault()
+    if (!rechLead) return
+    setRechSaving(true)
+    try {
+      await rechazarLead(rechLead.id, rechMotivo, rechNota)
+      const nombre = rechLead.nombre
+      setRechLead(null)
+      reload()
+      toast.ok(`${nombre} descartado. Ya no aparece en seguimiento.`)
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo rechazar"))
+    } finally {
+      setRechSaving(false)
     }
   }
 
@@ -427,6 +456,13 @@ export function VendedorSeguimiento() {
                             </Button>
                           </>
                         )}
+                        <button
+                          onClick={() => abrirRechazo(l)}
+                          title="Rechazar / descartar (no contesta, no le interesa…)"
+                          className="grid size-8 place-items-center rounded-md text-slate hover:bg-[#FBE2E2] hover:text-error"
+                        >
+                          <Ban size={15} />
+                        </button>
                       </>
                     ) : null}
                   </div>
@@ -452,6 +488,47 @@ export function VendedorSeguimiento() {
           </div>
         </>
       )}
+
+      {/* Modal: rechazar / descartar el lead con motivo */}
+      <Modal open={!!rechLead} onClose={() => setRechLead(null)} title="Rechazar lead">
+        {rechLead && (
+          <form onSubmit={confirmarRechazo} className="flex flex-col gap-3.5">
+            <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+              Descartás a <b className="text-ink">{rechLead.nombre}</b>. Sale del seguimiento y no se vuelve a
+              contactar. Queda el motivo en su historial.
+            </p>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Motivo del rechazo</span>
+              <select
+                value={rechMotivo}
+                onChange={(e) => setRechMotivo(e.target.value as MotivoRechazo)}
+                className="rounded-lg border border-input bg-white px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+              >
+                {MOTIVOS_RECHAZO.map((m) => (
+                  <option key={m.key} value={m.key}>{m.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">Comentario (opcional)</span>
+              <textarea
+                value={rechNota}
+                onChange={(e) => setRechNota(e.target.value)}
+                className="min-h-[70px] w-full resize-y rounded-lg border border-input px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+                placeholder="Ej: no contesta hace 3 llamados · dijo que ya tiene courier · pidió no contactar…"
+              />
+            </label>
+            <div className="mt-1 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setRechLead(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="blue" disabled={rechSaving}>
+                {rechSaving ? "Guardando…" : "Rechazar"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </>
   )
 }
