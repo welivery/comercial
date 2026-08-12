@@ -18,6 +18,7 @@ const VendedorAvance = lazy(() => import("@/pages/VendedorAvance").then((m) => (
 const VendedorPipeline = lazy(() => import("@/pages/VendedorPipeline").then((m) => ({ default: m.VendedorPipeline })))
 const OportunidadDetalle = lazy(() => import("@/pages/OportunidadDetalle").then((m) => ({ default: m.OportunidadDetalle })))
 const VendedorLeads = lazy(() => import("@/pages/VendedorLeads").then((m) => ({ default: m.VendedorLeads })))
+const VendedorSeguimiento = lazy(() => import("@/pages/VendedorSeguimiento").then((m) => ({ default: m.VendedorSeguimiento })))
 const VendedorSecuencias = lazy(() => import("@/pages/VendedorSecuencias").then((m) => ({ default: m.VendedorSecuencias })))
 
 // Redirige a la pantalla inicial según el modo de vista activo.
@@ -81,6 +82,7 @@ export function VentasApp() {
             <Route path="pipeline" element={<VendedorPipeline />} />
             <Route path="pipeline/:id" element={<OportunidadDetalle />} />
             <Route path="leads" element={<VendedorLeads />} />
+            <Route path="seguimiento" element={<VendedorSeguimiento />} />
             <Route path="secuencias" element={<VendedorSecuencias />} />
             <Route path="*" element={<InicioRedirect />} />
           </Route>

@@ -249,13 +249,23 @@ export function VendedorLeads() {
 
   const [searchParams, setSearchParams] = useSearchParams()
   const convParam = searchParams.get("convertir")
+  const seguirParam = searchParams.get("seguir")
   useEffect(() => {
-    if (!convParam || loading) return
-    const l = leads.find((x) => x.id === convParam)
-    if (l && l.estado === "nuevo") abrirConvertir(l)
-    searchParams.delete("convertir")
-    setSearchParams(searchParams, { replace: true })
-  }, [convParam, loading, leads]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (loading) return
+    // Llega desde Seguimiento: abre el modal correspondiente para el lead.
+    if (convParam) {
+      const l = leads.find((x) => x.id === convParam)
+      if (l && l.estado === "nuevo") abrirConvertir(l)
+    } else if (seguirParam) {
+      const l = leads.find((x) => x.id === seguirParam)
+      if (l && l.estado === "nuevo") abrirSecuencia(l)
+    }
+    if (convParam || seguirParam) {
+      searchParams.delete("convertir")
+      searchParams.delete("seguir")
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [convParam, seguirParam, loading, leads]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function buscar() {
     if (!vendedor.id || buscando) return

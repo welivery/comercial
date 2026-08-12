@@ -5,6 +5,7 @@ import {
   Building2,
   Columns3,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   Moon,
   Search,
@@ -42,6 +43,7 @@ const NAV_ADMIN_DATOS: NavItem[] = [
 ]
 const NAV_VENDEDOR: NavItem[] = [
   { to: "/avance", label: "Mi avance", icon: <Activity size={17} /> },
+  { to: "/seguimiento", label: "Seguimiento", icon: <ListChecks size={17} /> },
   { to: "/pipeline", label: "Oportunidades", icon: <Columns3 size={17} /> },
   { to: "/leads", label: "Buscar leads (IA)", icon: <Search size={17} /> },
   { to: "/secuencias", label: "Secuencias de email", icon: <Send size={17} /> },
