@@ -7,12 +7,12 @@ import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
-import { useInscripciones, useLeads, useOportunidades } from "@/hooks/useData"
-import { marcarContactado } from "@/data/api"
+import { useInscripciones, useLeads, useOportunidades, useSecuencias } from "@/hooks/useData"
+import { inscribir, marcarContactado } from "@/data/api"
 import { msgError } from "@/lib/errors"
 import { ESTADO_LABEL } from "@/lib/display"
 import { cn } from "@/lib/utils"
-import type { EstadoOportunidad, Lead, Oportunidad, SecuenciaInscripcion } from "@/lib/types"
+import type { EstadoOportunidad, Lead, Oportunidad, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
 
 // ── Umbrales (defaults sensatos; configurables por el admin más adelante) ──────
 const DIAS_REINTENTO = 3 // días desde el último contacto para volver a estar "pendiente"
@@ -60,6 +60,16 @@ function extraerTel(t?: string | null): string | null {
   const m = (t ?? "").match(/(\+?56\s?9(?:\s?\d){8}|9\d{8})/)
   return m ? m[0].trim() : null
 }
+function extraerEmail(t?: string | null): string | null {
+  const m = (t ?? "").match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)
+  return m ? m[0] : null
+}
+// Secuencia sugerida según el tipo de seguimiento: "sin tocar" → prospección
+// (primer contacto), "contactado sin rta" → reactivación (re-contacto).
+const OBJETIVO_POR_TIPO: Partial<Record<Tipo, SecuenciaObjetivo>> = {
+  sin_tocar: "prospeccion",
+  contactado: "reactivacion",
+}
 function haceDias(n: number): string {
   return n < 1 ? "hoy" : n === 1 ? "hace 1 día" : `hace ${n} días`
 }
@@ -69,11 +79,19 @@ export function VendedorSeguimiento() {
   const navigate = useNavigate()
   const toast = useToast()
   const { data: leadsData, loading, reload } = useLeads(vendedor.id)
-  const { data: inscData } = useInscripciones(vendedor.id)
+  const { data: inscData, reload: reloadInsc } = useInscripciones(vendedor.id)
   const { data: opsData } = useOportunidades(vendedor.id)
+  const { data: secuenciasData } = useSecuencias(vendedor.id)
 
   const leads = useMemo(() => leadsData ?? [], [leadsData])
   const ops = useMemo(() => opsData ?? [], [opsData])
+  const seqActivas = useMemo<Secuencia[]>(() => (secuenciasData ?? []).filter((s) => s.activo), [secuenciasData])
+  // Secuencia sugerida para un tipo: la primera activa del objetivo que le
+  // corresponde; si no hay, cualquiera activa (para no bloquear el seguimiento).
+  function sugeridaPara(tipo: Tipo): Secuencia | null {
+    const obj = OBJETIVO_POR_TIPO[tipo]
+    return seqActivas.find((s) => s.objetivo === obj) ?? seqActivas[0] ?? null
+  }
   const inscByLead = useMemo(() => {
     const m = new Map<string, SecuenciaInscripcion>()
     for (const i of inscData ?? []) if (i.lead_id && !m.has(i.lead_id)) m.set(i.lead_id, i)
@@ -177,6 +195,40 @@ export function VendedorSeguimiento() {
       toast.error(msgError(e, "No se pudo registrar"))
     } finally {
       setRegContacto(null)
+    }
+  }
+
+  const [siguiendo, setSiguiendo] = useState<string | null>(null)
+  // Un click: inscribe al lead en la secuencia sugerida (seguimiento automático).
+  // Si no tiene email cargado, manda a Leads a completarlo (modal de inscripción).
+  async function hacerSeguimiento(l: Lead, tipo: Tipo) {
+    const seq = sugeridaPara(tipo)
+    if (!seq) {
+      toast.error("No tenés secuencias activas. Creá una en Secuencias de email.")
+      navigate("/secuencias")
+      return
+    }
+    const email = l.email ?? extraerEmail(l.motivo)
+    if (!email) {
+      navigate(`/leads?seguir=${l.id}`)
+      return
+    }
+    setSiguiendo(l.id)
+    try {
+      await inscribir({
+        secuencia_id: seq.id,
+        vendedor_id: vendedor.id,
+        lead_id: l.id,
+        destinatario_nombre: l.contacto || l.nombre,
+        destinatario_empresa: l.nombre,
+        destinatario_email: email,
+      })
+      reloadInsc()
+      toast.ok(`${l.nombre} entró en “${seq.nombre}”. Sale el primer mail solo.`)
+    } catch (e) {
+      toast.error(msgError(e, "No se pudo poner en seguimiento"))
+    } finally {
+      setSiguiendo(null)
     }
   }
 
@@ -355,9 +407,19 @@ export function VendedorSeguimiento() {
                             >
                               <PhoneOutgoing size={15} />
                             </button>
-                            {it.tipo === "sin_tocar" && (
-                              <Button size="sm" variant="outline" onClick={() => navigate(`/leads?seguir=${l.id}`)}>
-                                <Send /> Secuencia
+                            {(it.tipo === "sin_tocar" || it.tipo === "contactado") && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={siguiendo === l.id}
+                                title={
+                                  sugeridaPara(it.tipo)
+                                    ? `Seguimiento automático · secuencia “${sugeridaPara(it.tipo)!.nombre}”`
+                                    : "Configurá una secuencia activa"
+                                }
+                                onClick={() => hacerSeguimiento(l, it.tipo)}
+                              >
+                                <Send /> {siguiendo === l.id ? "Poniendo…" : "Hacer seguimiento"}
                               </Button>
                             )}
                             <Button size="sm" variant="blue" onClick={() => navigate(`/leads?convertir=${l.id}`)}>
