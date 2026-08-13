@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import {
+  fetchCliente,
   fetchClientes,
   fetchConfigSecuencias,
   fetchContexto,
@@ -68,6 +69,8 @@ export const useOportunidad = (id: string | undefined) =>
 export const useEventos = (oportunidadId: string | undefined) =>
   useAsync(() => (oportunidadId ? fetchEventos(oportunidadId) : Promise.resolve([])), [oportunidadId])
 export const useClientes = () => useAsync(() => fetchClientes(), [])
+export const useCliente = (id: string | null | undefined) =>
+  useAsync(() => (id ? fetchCliente(id) : Promise.resolve(null)), [id])
 export const useContexto = () => useAsync(() => fetchContexto(), [])
 export const useLeads = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchLeads(vendedorId) : Promise.resolve([])), [vendedorId])

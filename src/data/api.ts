@@ -81,16 +81,13 @@ function mapOportunidad(r: any): Oportunidad {
   return {
     id: r.id,
     vendedor_id: r.vendedor_id,
+    cliente_id: r.cliente_id ?? null,
     ecommerce: r.ecommerce,
     sitio: r.sitio,
     envios_aprox: r.envios_aprox,
     lugar_retiro: r.lugar_retiro,
     tipo_producto: r.tipo_producto,
     interes: r.interes,
-    contacto: r.contacto ?? null,
-    email: r.email ?? null,
-    telefono: r.telefono ?? null,
-    notas: r.notas ?? null,
     bucket: r.bucket as Bucket,
     clasificacion: {
       marca_reconocida: r.marca_reconocida,
@@ -302,6 +299,57 @@ export async function fetchOportunidades(vendedorId?: string): Promise<Oportunid
   return check(data, error).map(mapOportunidad)
 }
 
+// ─────────────────────────── Empresa (registro único) ───────────────────────────
+// La EMPRESA (tabla `clientes`) es la fuente de verdad del contacto y las notas.
+// Busca la empresa por nombre normalizado (misma clave que los leads) y, si no
+// existe, la crea como 'prospeccion'. Si la empresa ya existe pero le falta algún
+// dato de contacto, lo rellena con lo que traiga el lead/oportunidad (nunca pisa
+// lo cargado). Devuelve el id de la empresa.
+async function asegurarEmpresa(p: {
+  nombre: string
+  vendedor_id: string | null
+  envios_mes?: number
+  bucket?: Bucket
+  contacto?: string | null
+  email?: string | null
+  telefono?: string | null
+}): Promise<string> {
+  const clave = claveLead(p.nombre)
+  const { data: cls, error } = await supabase.from("clientes").select("id, nombre, contacto, email, telefono")
+  if (error) throw new Error(error.message)
+  const match = (cls ?? []).find((c: { nombre: string }) => claveLead(c.nombre) === clave) as
+    | { id: string; contacto: string | null; email: string | null; telefono: string | null }
+    | undefined
+  if (match) {
+    const patch: Record<string, string> = {}
+    if (!match.contacto && p.contacto) patch.contacto = p.contacto
+    if (!match.email && p.email) patch.email = p.email
+    if (!match.telefono && p.telefono) patch.telefono = p.telefono
+    if (Object.keys(patch).length) await supabase.from("clientes").update(patch).eq("id", match.id)
+    return match.id
+  }
+  const bucket =
+    p.bucket ??
+    asignarBucket({ marca_reconocida: false, envios_aprox: p.envios_mes ?? 0, quiere_fulfillment: false })
+  const { data, error: insErr } = await supabase
+    .from("clientes")
+    .insert({
+      nombre: p.nombre,
+      segmento: "prospeccion",
+      envios_mes: p.envios_mes ?? 0,
+      bucket,
+      vendedor_id: p.vendedor_id,
+      contacto: p.contacto ?? null,
+      email: p.email ?? null,
+      telefono: p.telefono ?? null,
+      nota: "",
+    })
+    .select("id")
+    .single()
+  if (insErr) throw new Error(insErr.message)
+  return (data as { id: string }).id
+}
+
 // ─────────────────────────── Oportunidades (escritura) ───────────────────────────
 export interface OportunidadInput {
   vendedor_id: string
@@ -322,7 +370,15 @@ export async function crearOportunidad(i: OportunidadInput): Promise<void> {
     envios_aprox: i.envios_aprox,
     quiere_fulfillment: i.quiere_fulfillment,
   })
-  const { error } = await supabase.from("oportunidades").insert({ ...i, bucket, estado: "interesado" })
+  const cliente_id = await asegurarEmpresa({
+    nombre: i.ecommerce,
+    vendedor_id: i.vendedor_id,
+    envios_mes: i.envios_aprox,
+    bucket,
+  })
+  const { error } = await supabase
+    .from("oportunidades")
+    .insert({ ...i, bucket, estado: "interesado", cliente_id })
   if (error) throw new Error(error.message)
 }
 
@@ -357,8 +413,8 @@ export async function moverOportunidad(
   await sumarSeguimiento().catch(() => {})
 }
 
-// Edita los datos de la oportunidad (contacto + datos del prospecto + notas).
-// Recalcula el bucket si cambian los envíos, para mantenerlo consistente.
+// Edita los DATOS DEL PROSPECTO de la oportunidad (no el contacto: eso vive en la
+// empresa, ver guardarContactoEmpresa). Recalcula el bucket si cambian los envíos.
 export interface OportunidadPatch {
   ecommerce?: string
   sitio?: string | null
@@ -366,10 +422,6 @@ export interface OportunidadPatch {
   lugar_retiro?: string
   tipo_producto?: string
   interes?: string | null
-  contacto?: string | null
-  email?: string | null
-  telefono?: string | null
-  notas?: string | null
 }
 export async function actualizarOportunidad(o: Oportunidad, patch: OportunidadPatch): Promise<void> {
   const limpio: Record<string, unknown> = {}
@@ -382,6 +434,35 @@ export async function actualizarOportunidad(o: Oportunidad, patch: OportunidadPa
   }
   const { error } = await supabase.from("oportunidades").update(limpio).eq("id", o.id)
   if (error) throw new Error(error.message)
+}
+
+// Registro único: guarda el contacto + notas en la EMPRESA de la oportunidad.
+// Si la oportunidad todavía no tiene empresa vinculada (cliente_id null), la
+// asegura y la linkea. Lo editado queda disponible en leads, oportunidades y
+// campañas de esa misma empresa. Devuelve el id de la empresa.
+export async function guardarContactoEmpresa(
+  o: Oportunidad,
+  patch: { contacto?: string | null; email?: string | null; telefono?: string | null; nota?: string | null }
+): Promise<string> {
+  let clienteId = o.cliente_id
+  if (!clienteId) {
+    clienteId = await asegurarEmpresa({
+      nombre: o.ecommerce,
+      vendedor_id: o.vendedor_id,
+      envios_mes: o.envios_aprox,
+      bucket: o.bucket,
+    })
+    await supabase.from("oportunidades").update({ cliente_id: clienteId }).eq("id", o.id)
+  }
+  const limpio: Record<string, string | null> = {}
+  for (const [k, v] of Object.entries(patch)) {
+    // `nota` es NOT NULL en la empresa → nunca null.
+    if (k === "nota") limpio.nota = (v ?? "").trim()
+    else limpio[k] = typeof v === "string" ? v.trim() || null : null
+  }
+  const { error } = await supabase.from("clientes").update(limpio).eq("id", clienteId)
+  if (error) throw new Error(error.message)
+  return clienteId
 }
 
 export async function fetchOportunidad(id: string): Promise<Oportunidad | null> {
@@ -402,6 +483,12 @@ export async function fetchEventos(oportunidadId: string): Promise<OportunidadEv
 export async function fetchClientes(): Promise<Cliente[]> {
   const { data, error } = await supabase.from("clientes").select("*").order("segmento")
   return check(data, error).map(mapCliente)
+}
+
+export async function fetchCliente(id: string): Promise<Cliente | null> {
+  const { data, error } = await supabase.from("clientes").select("*").eq("id", id).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data ? mapCliente(data) : null
 }
 
 // ─────────────────────────────── Clientes (CRUD) ───────────────────────────────
@@ -556,6 +643,7 @@ function mapLead(r: any): Lead {
     rechazo_nota: r.rechazo_nota ?? null,
     contactos_intentos: r.contactos_intentos ?? 0,
     ultimo_contacto_at: r.ultimo_contacto_at ?? null,
+    cliente_id: r.cliente_id ?? null,
     oportunidad_id: r.oportunidad_id ?? null,
     created_at: r.created_at,
   }
@@ -847,29 +935,32 @@ export async function convertirLead(
     envios_aprox: i.envios_aprox,
     quiere_fulfillment: i.quiere_fulfillment,
   })
-  // Copiamos los datos de contacto del lead a la oportunidad (para no recargar).
+  // Registro único: aseguramos la EMPRESA del lead (crea/matchea por nombre) y le
+  // volcamos el contacto del lead. La oportunidad y el lead quedan linkeados a ella.
   const { data: lead } = await supabase
     .from("leads")
     .select("contacto, email, telefono")
     .eq("id", leadId)
     .maybeSingle()
+  const cliente_id = await asegurarEmpresa({
+    nombre: i.ecommerce,
+    vendedor_id: i.vendedor_id,
+    envios_mes: i.envios_aprox,
+    bucket,
+    contacto: lead?.contacto ?? null,
+    email: lead?.email ?? null,
+    telefono: lead?.telefono ?? null,
+  })
   const { data, error } = await supabase
     .from("oportunidades")
-    .insert({
-      ...i,
-      bucket,
-      estado: "interesado",
-      contacto: lead?.contacto ?? null,
-      email: lead?.email ?? null,
-      telefono: lead?.telefono ?? null,
-    })
+    .insert({ ...i, bucket, estado: "interesado", cliente_id })
     .select("id")
     .single()
   if (error) throw new Error(error.message)
   const opId = (data as { id: string }).id
   const { error: updErr } = await supabase
     .from("leads")
-    .update({ estado: "convertido", oportunidad_id: opId, updated_at: new Date().toISOString() })
+    .update({ estado: "convertido", oportunidad_id: opId, cliente_id, updated_at: new Date().toISOString() })
     .eq("id", leadId)
   if (updErr) throw new Error(updErr.message)
   // Nota opcional del vendedor → queda como primer evento del historial.
@@ -903,8 +994,32 @@ export async function pasarContactoAOportunidad(p: {
     quiere_fulfillment: p.quiere_fulfillment,
   })
   const now = new Date().toISOString()
+  // Registro único: contacto del lead (si hay) → empresa; opp y lead la linkean.
+  let leadCt: { contacto: string | null; email: string | null; telefono: string | null } = {
+    contacto: null,
+    email: null,
+    telefono: null,
+  }
+  if (p.lead_id) {
+    const { data: l } = await supabase
+      .from("leads")
+      .select("contacto, email, telefono")
+      .eq("id", p.lead_id)
+      .maybeSingle()
+    if (l) leadCt = l
+  }
+  const cliente_id = await asegurarEmpresa({
+    nombre: p.empresa,
+    vendedor_id: p.vendedor_id,
+    envios_mes: p.envios_aprox,
+    bucket,
+    contacto: leadCt.contacto,
+    email: leadCt.email,
+    telefono: leadCt.telefono,
+  })
   const row: Record<string, unknown> = {
     vendedor_id: p.vendedor_id,
+    cliente_id,
     ecommerce: p.empresa,
     sitio: null,
     envios_aprox: p.envios_aprox,
@@ -924,7 +1039,7 @@ export async function pasarContactoAOportunidad(p: {
   if (p.lead_id) {
     await supabase
       .from("leads")
-      .update({ estado: "convertido", oportunidad_id: opId, updated_at: now })
+      .update({ estado: "convertido", oportunidad_id: opId, cliente_id, updated_at: now })
       .eq("id", p.lead_id)
   }
   await supabase.from("secuencia_inscripciones").update({ estado: "terminada" }).eq("id", p.inscripcion_id)

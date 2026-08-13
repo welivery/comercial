@@ -62,16 +62,13 @@ export interface DatosClasificacion {
 export interface Oportunidad {
   id: string
   vendedor_id: string
+  cliente_id: string | null // empresa (registro único): dueña del contacto y las notas
   ecommerce: string
   sitio: string | null
   envios_aprox: number // envíos/mes estimados
   lugar_retiro: string
   tipo_producto: string
   interes: string | null // qué busca el prospecto
-  contacto: string | null // persona de contacto
-  email: string | null
-  telefono: string | null
-  notas: string | null // notas libres persistentes (aparte del historial de eventos)
   bucket: Bucket
   clasificacion: DatosClasificacion // por qué cayó en ese bucket
   estado: EstadoOportunidad
@@ -161,6 +158,7 @@ export interface Lead {
   rechazo_nota: string | null // comentario libre al rechazar (historial)
   contactos_intentos: number // veces que se lo contactó sin respuesta (reintentos)
   ultimo_contacto_at: string | null // fecha del último intento de contacto
+  cliente_id: string | null // empresa vinculada (registro único), si ya se creó/matcheó
   oportunidad_id: string | null
   created_at: string
 }

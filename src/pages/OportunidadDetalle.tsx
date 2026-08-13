@@ -1,12 +1,17 @@
 import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
-import { ArrowLeft, FileText, Mail, Pencil, Phone, Receipt } from "lucide-react"
+import { ArrowLeft, Building2, FileText, Mail, Pencil, Phone, Receipt } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { BucketChip, Cargando, EstadoBadge } from "@/components/widgets"
-import { useEventos, useOportunidad } from "@/hooks/useData"
-import { actualizarOportunidad, moverOportunidad, type OportunidadPatch } from "@/data/api"
+import { useCliente, useEventos, useOportunidad } from "@/hooks/useData"
+import {
+  actualizarOportunidad,
+  guardarContactoEmpresa,
+  moverOportunidad,
+  type OportunidadPatch,
+} from "@/data/api"
 import { useToast } from "@/components/Toast"
 import { msgError } from "@/lib/errors"
 import { motivoBucket } from "@/lib/buckets"
@@ -29,18 +34,29 @@ const PASO_CORTO: Record<string, string> = {
   cierre_ganado: "Cierre",
 }
 
+// Contacto + notas de la ficha. Viven en la EMPRESA (registro único), no en la
+// oportunidad: se comparten con leads, otras oportunidades y campañas.
+interface ContactoForm {
+  contacto: string
+  email: string
+  telefono: string
+  nota: string
+}
+
 export function OportunidadDetalle() {
   const { id } = useParams()
   const { data: o, loading, reload } = useOportunidad(id)
+  const { data: empresa, reload: reloadEmpresa } = useCliente(o?.cliente_id)
   const { data: eventosData } = useEventos(id)
   const toast = useToast()
   const [perdOpen, setPerdOpen] = useState(false)
   const [perdMotivo, setPerdMotivo] = useState("")
   const [perdSaving, setPerdSaving] = useState(false)
 
-  // Modal "Editar ficha" (contacto + datos del prospecto + notas).
+  // Modal "Editar ficha": datos del prospecto (oportunidad) + contacto/notas (empresa).
   const [editOpen, setEditOpen] = useState(false)
   const [ef, setEf] = useState<OportunidadPatch>({})
+  const [cf, setCf] = useState<ContactoForm>({ contacto: "", email: "", telefono: "", nota: "" })
   const [efSaving, setEfSaving] = useState(false)
   function abrirEditar() {
     if (!o) return
@@ -51,10 +67,12 @@ export function OportunidadDetalle() {
       lugar_retiro: o.lugar_retiro,
       tipo_producto: o.tipo_producto,
       interes: o.interes ?? "",
-      contacto: o.contacto ?? "",
-      email: o.email ?? "",
-      telefono: o.telefono ?? "",
-      notas: o.notas ?? "",
+    })
+    setCf({
+      contacto: empresa?.contacto ?? "",
+      email: empresa?.email ?? "",
+      telefono: empresa?.telefono ?? "",
+      nota: empresa?.nota ?? "",
     })
     setEditOpen(true)
   }
@@ -63,9 +81,12 @@ export function OportunidadDetalle() {
     if (!o) return
     setEfSaving(true)
     try {
+      // Prospecto → oportunidad; contacto + notas → empresa (registro único).
       await actualizarOportunidad(o, ef)
+      await guardarContactoEmpresa(o, cf)
       setEditOpen(false)
       reload()
+      reloadEmpresa()
     } catch (err) {
       toast.error(msgError(err, "No se pudo guardar"))
     } finally {
@@ -133,12 +154,12 @@ export function OportunidadDetalle() {
       </span>,
     ],
     ["Interés", o.interes ?? "—"],
-    ["Contacto", o.contacto || "—"],
+    ["Contacto", empresa?.contacto || "—"],
     [
       "Email",
-      o.email ? (
-        <a href={`mailto:${o.email}`} className="inline-flex items-center gap-1.5 text-blue hover:underline">
-          <Mail size={13} /> {o.email}
+      empresa?.email ? (
+        <a href={`mailto:${empresa.email}`} className="inline-flex items-center gap-1.5 text-blue hover:underline">
+          <Mail size={13} /> {empresa.email}
         </a>
       ) : (
         "—"
@@ -146,9 +167,9 @@ export function OportunidadDetalle() {
     ],
     [
       "Teléfono",
-      o.telefono ? (
-        <a href={`tel:${o.telefono.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-blue hover:underline">
-          <Phone size={13} /> {o.telefono}
+      empresa?.telefono ? (
+        <a href={`tel:${empresa.telefono.replace(/\s/g, "")}`} className="inline-flex items-center gap-1.5 text-blue hover:underline">
+          <Phone size={13} /> {empresa.telefono}
         </a>
       ) : (
         "—"
@@ -222,18 +243,30 @@ export function OportunidadDetalle() {
             ))}
           </dl>
 
-          {/* Notas libres */}
-          <div className="mt-4 rounded-lg border border-border bg-mist/40 p-3">
+          {/* Contacto/notas viven en la empresa: aviso de que es compartido */}
+          <div className="mt-3 flex items-center gap-1.5 rounded-md bg-mist/60 px-2.5 py-1.5 text-[11.5px] text-slate">
+            <Building2 size={13} className="shrink-0 text-slate" />
+            <span>
+              Contacto y notas de la empresa{empresa ? <b className="font-medium text-ink"> {empresa.nombre}</b> : ""} —
+              se comparten con sus leads, oportunidades y campañas.
+            </span>
+            <Link to="/clientes" className="ml-auto shrink-0 font-medium text-blue hover:underline">
+              Ver ficha
+            </Link>
+          </div>
+
+          {/* Notas libres (de la empresa) */}
+          <div className="mt-3 rounded-lg border border-border bg-mist/40 p-3">
             <div className="mb-1 flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate">Notas</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate">Notas de la empresa</span>
               <button onClick={abrirEditar} className="text-[11.5px] font-medium text-blue hover:underline">
-                {o.notas ? "Editar" : "Agregar"}
+                {empresa?.nota ? "Editar" : "Agregar"}
               </button>
             </div>
-            {o.notas ? (
-              <p className="whitespace-pre-line text-[13px] leading-relaxed text-ink">{o.notas}</p>
+            {empresa?.nota ? (
+              <p className="whitespace-pre-line text-[13px] leading-relaxed text-ink">{empresa.nota}</p>
             ) : (
-              <p className="text-[12.5px] italic text-muted">Sin notas. Dejá acá info útil del prospecto.</p>
+              <p className="text-[12.5px] italic text-muted">Sin notas. Dejá acá info útil de la empresa.</p>
             )}
           </div>
 
@@ -327,22 +360,27 @@ export function OportunidadDetalle() {
         </form>
       </Modal>
 
-      {/* Modal: editar ficha (contacto + datos + notas) */}
+      {/* Modal: editar ficha (prospecto + contacto/notas de la empresa) */}
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Editar ficha de la oportunidad">
         <form onSubmit={guardarEdit} className="flex flex-col gap-3.5">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate">Contacto</div>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate">
+            <Building2 size={13} /> Contacto de la empresa
+          </div>
+          <p className="-mt-1.5 text-[11.5px] text-muted">
+            Se guarda en la empresa y queda disponible en sus leads, oportunidades y campañas.
+          </p>
           <label className="flex flex-col gap-1.5">
             <span className="text-[12px] font-medium text-slate">Persona de contacto</span>
-            <input value={ef.contacto ?? ""} onChange={(e) => setEf({ ...ef, contacto: e.target.value })} className="ipt" placeholder="Nombre y apellido" />
+            <input value={cf.contacto} onChange={(e) => setCf({ ...cf, contacto: e.target.value })} className="ipt" placeholder="Nombre y apellido" />
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5">
               <span className="text-[12px] font-medium text-slate">Email</span>
-              <input type="email" value={ef.email ?? ""} onChange={(e) => setEf({ ...ef, email: e.target.value })} className="ipt" placeholder="contacto@empresa.cl" />
+              <input type="email" value={cf.email} onChange={(e) => setCf({ ...cf, email: e.target.value })} className="ipt" placeholder="contacto@empresa.cl" />
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-[12px] font-medium text-slate">Teléfono</span>
-              <input value={ef.telefono ?? ""} onChange={(e) => setEf({ ...ef, telefono: e.target.value })} className="ipt" placeholder="+56 9 1234 5678" />
+              <input value={cf.telefono} onChange={(e) => setCf({ ...cf, telefono: e.target.value })} className="ipt" placeholder="+56 9 1234 5678" />
             </label>
           </div>
 
@@ -375,13 +413,16 @@ export function OportunidadDetalle() {
             <span className="text-[12px] font-medium text-slate">Interés</span>
             <input value={ef.interes ?? ""} onChange={(e) => setEf({ ...ef, interes: e.target.value })} className="ipt" placeholder="Fulfillment, última milla…" />
           </label>
+
           <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-slate">Notas</span>
+            <span className="flex items-center gap-1.5 text-[12px] font-medium text-slate">
+              <Building2 size={12} /> Notas de la empresa
+            </span>
             <textarea
-              value={ef.notas ?? ""}
-              onChange={(e) => setEf({ ...ef, notas: e.target.value })}
+              value={cf.nota}
+              onChange={(e) => setCf({ ...cf, nota: e.target.value })}
               className="ipt min-h-[90px] resize-y"
-              placeholder="Todo lo que quieras dejar asentado del prospecto: quién decide, presupuesto, próxima acción…"
+              placeholder="Todo lo que quieras dejar asentado de la empresa: quién decide, presupuesto, próxima acción…"
             />
           </label>
 
