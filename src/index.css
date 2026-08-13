@@ -131,3 +131,43 @@
     @apply font-semibold text-foreground;
   }
 }
+
+/* Scrollbar horizontal VISIBLE en tablas/tableros scrolleables. En navegadores
+   con scrollbars "overlay" (auto-ocultas: macOS, Windows 11) la barra no se veía
+   y parecía que faltaba el scroll para ver lo que queda a la derecha. Esto la
+   hace visible y prolija cuando hay contenido de más, sin ocupar lugar si no. */
+.overflow-x-auto,
+.overflow-auto {
+  scrollbar-width: thin;                 /* Firefox */
+  scrollbar-color: #c7cdd8 transparent;
+}
+.overflow-x-auto::-webkit-scrollbar,
+.overflow-auto::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+.overflow-x-auto::-webkit-scrollbar-track,
+.overflow-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb,
+.overflow-auto::-webkit-scrollbar-thumb {
+  background: #c7cdd8;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.overflow-x-auto::-webkit-scrollbar-thumb:hover,
+.overflow-auto::-webkit-scrollbar-thumb:hover {
+  background: #a6aebc;
+  background-clip: content-box;
+}
+.dark .overflow-x-auto,
+.dark .overflow-auto {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+.dark .overflow-x-auto::-webkit-scrollbar-thumb,
+.dark .overflow-auto::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  background-clip: content-box;
+}
