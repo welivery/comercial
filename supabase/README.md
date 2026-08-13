@@ -87,6 +87,8 @@ Correr en este orden si todavía no se corrieron:
 21. `seguimiento-diario.sql` — racha diaria (Etapa 3): tabla `seguimiento_diario`
     + RPC `sumar_seguimiento()` que la incrementa. Alimenta la racha 🔥 y el
     anillo "hoy X/meta" en Seguimiento. Solo SQL, sin redeploy.
+22. `oportunidades-contacto.sql` — contacto (persona/email/teléfono) + notas en la
+    oportunidad, editables desde la ficha. Solo SQL, sin redeploy.
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se

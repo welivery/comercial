@@ -87,6 +87,10 @@ function mapOportunidad(r: any): Oportunidad {
     lugar_retiro: r.lugar_retiro,
     tipo_producto: r.tipo_producto,
     interes: r.interes,
+    contacto: r.contacto ?? null,
+    email: r.email ?? null,
+    telefono: r.telefono ?? null,
+    notas: r.notas ?? null,
     bucket: r.bucket as Bucket,
     clasificacion: {
       marca_reconocida: r.marca_reconocida,
@@ -351,6 +355,33 @@ export async function moverOportunidad(
   const { error } = await supabase.from("oportunidades").update(patch).eq("id", o.id)
   if (error) throw new Error(error.message)
   await sumarSeguimiento().catch(() => {})
+}
+
+// Edita los datos de la oportunidad (contacto + datos del prospecto + notas).
+// Recalcula el bucket si cambian los envíos, para mantenerlo consistente.
+export interface OportunidadPatch {
+  ecommerce?: string
+  sitio?: string | null
+  envios_aprox?: number
+  lugar_retiro?: string
+  tipo_producto?: string
+  interes?: string | null
+  contacto?: string | null
+  email?: string | null
+  telefono?: string | null
+  notas?: string | null
+}
+export async function actualizarOportunidad(o: Oportunidad, patch: OportunidadPatch): Promise<void> {
+  const limpio: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(patch)) {
+    limpio[k] = typeof v === "string" ? (["ecommerce", "lugar_retiro", "tipo_producto"].includes(k) ? v : v.trim() || null) : v
+  }
+  // Si cambian los envíos, recomputar el bucket con la clasificación existente.
+  if (typeof patch.envios_aprox === "number" && patch.envios_aprox !== o.envios_aprox) {
+    limpio.bucket = asignarBucket({ ...o.clasificacion, envios_aprox: patch.envios_aprox })
+  }
+  const { error } = await supabase.from("oportunidades").update(limpio).eq("id", o.id)
+  if (error) throw new Error(error.message)
 }
 
 export async function fetchOportunidad(id: string): Promise<Oportunidad | null> {
@@ -816,9 +847,22 @@ export async function convertirLead(
     envios_aprox: i.envios_aprox,
     quiere_fulfillment: i.quiere_fulfillment,
   })
+  // Copiamos los datos de contacto del lead a la oportunidad (para no recargar).
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("contacto, email, telefono")
+    .eq("id", leadId)
+    .maybeSingle()
   const { data, error } = await supabase
     .from("oportunidades")
-    .insert({ ...i, bucket, estado: "interesado" })
+    .insert({
+      ...i,
+      bucket,
+      estado: "interesado",
+      contacto: lead?.contacto ?? null,
+      email: lead?.email ?? null,
+      telefono: lead?.telefono ?? null,
+    })
     .select("id")
     .single()
   if (error) throw new Error(error.message)

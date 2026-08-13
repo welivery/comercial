@@ -68,6 +68,10 @@ export interface Oportunidad {
   lugar_retiro: string
   tipo_producto: string
   interes: string | null // qué busca el prospecto
+  contacto: string | null // persona de contacto
+  email: string | null
+  telefono: string | null
+  notas: string | null // notas libres persistentes (aparte del historial de eventos)
   bucket: Bucket
   clasificacion: DatosClasificacion // por qué cayó en ese bucket
   estado: EstadoOportunidad
