@@ -350,6 +350,7 @@ export async function moverOportunidad(
   else if (o.estado === "perdido") patch.perdida_motivo = null
   const { error } = await supabase.from("oportunidades").update(patch).eq("id", o.id)
   if (error) throw new Error(error.message)
+  await sumarSeguimiento().catch(() => {})
 }
 
 export async function fetchOportunidad(id: string): Promise<Oportunidad | null> {
@@ -697,6 +698,7 @@ export async function rechazarLead(id: string, motivo: MotivoRechazo, nota?: str
     })
     .eq("id", id)
   if (error) throw new Error(error.message)
+  await sumarSeguimiento().catch(() => {})
 }
 
 // Reasigna leads a otro vendedor. Cada lead queda con un único dueño. Si el
@@ -727,6 +729,32 @@ export async function asignarLeads(
   return { movidos: mover.length, omitidos: ids.length - mover.length }
 }
 
+// ─────────────────── Racha de seguimientos (gamification) ────────────────────
+// Suma 1 al día de hoy del vendedor que llama (RPC sin params, deriva el
+// vendedor del token). Best-effort: nunca rompe la acción principal.
+export async function sumarSeguimiento(): Promise<void> {
+  await supabase.rpc("sumar_seguimiento")
+}
+export interface DiaSeguimiento {
+  fecha: string
+  hechos: number
+}
+export async function fetchSeguimientoDiario(vendedorId: string): Promise<DiaSeguimiento[]> {
+  if (!vendedorId) return []
+  const desde = new Date()
+  desde.setDate(desde.getDate() - 60)
+  const { data, error } = await supabase
+    .from("seguimiento_diario")
+    .select("fecha, hechos")
+    .eq("vendedor_id", vendedorId)
+    .gte("fecha", desde.toISOString().slice(0, 10))
+    .order("fecha")
+  if (error) throw new Error(error.message)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  return (data ?? []).map((r: any) => ({ fecha: String(r.fecha).slice(0, 10), hechos: r.hechos ?? 0 }))
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
 // Registra un intento de contacto sin respuesta (llamada / WhatsApp / mail
 // directo). Suma 1 al contador y sella la fecha. El lead sigue "nuevo" (sin
 // clasificar) para poder reintentar más tarde y, al final, pasarlo a
@@ -738,6 +766,7 @@ export async function marcarContactado(id: string, intentosActuales: number): Pr
     .update({ contactos_intentos: n, ultimo_contacto_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", id)
   if (error) throw new Error(error.message)
+  await sumarSeguimiento().catch(() => {})
   return n
 }
 
@@ -805,6 +834,7 @@ export async function convertirLead(
       .from("oportunidad_eventos")
       .insert({ oportunidad_id: opId, titulo: "Nota al pasar a oportunidad", detalle: nota.trim() })
   }
+  await sumarSeguimiento().catch(() => {})
   return opId
 }
 
@@ -1119,6 +1149,7 @@ export async function inscribir(p: {
     proximo_envio_at: proximo,
   })
   if (error) throw new Error(error.message)
+  await sumarSeguimiento().catch(() => {})
 }
 
 export async function actualizarInscripcion(

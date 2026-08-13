@@ -84,6 +84,9 @@ Correr en este orden si todavía no se corrieron:
 20. `bucket-text.sql` — **arreglo**: pasa las columnas `bucket` de enum fijo a
     text (los segmentos son configurables). Sin esto falla al clasificar como
     'chico' o cualquier segmento nuevo. Solo SQL, sin redeploy.
+21. `seguimiento-diario.sql` — racha diaria (Etapa 3): tabla `seguimiento_diario`
+    + RPC `sumar_seguimiento()` que la incrementa. Alimenta la racha 🔥 y el
+    anillo "hoy X/meta" en Seguimiento. Solo SQL, sin redeploy.
 
 El cron sigue vigilando el hilo aunque ya haya respondido: cualquier mensaje NUEVO
 del cliente (ej. confirma un horario) frena la cadencia, queda **pendiente** (se

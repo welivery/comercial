@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Ban, CheckCircle2, Flame, PartyPopper, Phone, PhoneOutgoing, Plus, Send, Sparkles } from "lucide-react"
+import { Ban, CheckCircle2, Flame, HeartPulse, PartyPopper, Phone, PhoneOutgoing, Plus, Send, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
@@ -8,8 +8,9 @@ import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
-import { useInscripciones, useLeads, useOportunidades, useSecuencias } from "@/hooks/useData"
+import { useInscripciones, useLeads, useOportunidades, useSecuencias, useSeguimientoDiario } from "@/hooks/useData"
 import { inscribir, marcarContactado, rechazarLead } from "@/data/api"
+import type { DiaSeguimiento } from "@/data/api"
 import { msgError } from "@/lib/errors"
 import { ESTADO_LABEL, MOTIVOS_RECHAZO } from "@/lib/display"
 import { cn } from "@/lib/utils"
@@ -75,6 +76,31 @@ function haceDias(n: number): string {
   return n < 1 ? "hoy" : n === 1 ? "hace 1 día" : `hace ${n} días`
 }
 
+// ── Gamification (Etapa 3) ────────────────────────────────────────────────────
+const META_DIARIA = 5 // seguimientos por día para "cumplir" y sostener la racha
+function fechaLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+// Racha por días HÁBILES (lun-vie): cuenta hacia atrás desde hoy mientras cada
+// día hábil cumplió la meta. Hoy no corta la racha si todavía está en progreso.
+function calcRacha(dias: DiaSeguimiento[], meta: number): number {
+  const map = new Map(dias.map((d) => [d.fecha, d.hechos]))
+  const hoyStr = fechaLocal(new Date())
+  let racha = 0
+  const d = new Date()
+  for (let i = 0; i < 90; i++) {
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) {
+      const s = fechaLocal(d)
+      const hechos = map.get(s) ?? 0
+      if (hechos >= meta) racha++
+      else if (s !== hoyStr) break // un día hábil pasado sin cumplir corta la racha
+    }
+    d.setDate(d.getDate() - 1)
+  }
+  return racha
+}
+
 export function VendedorSeguimiento() {
   const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId, sinPerfil } = useVentas()
   const navigate = useNavigate()
@@ -83,6 +109,7 @@ export function VendedorSeguimiento() {
   const { data: inscData, reload: reloadInsc } = useInscripciones(vendedor.id)
   const { data: opsData } = useOportunidades(vendedor.id)
   const { data: secuenciasData } = useSecuencias(vendedor.id)
+  const { data: diarioData, reload: reloadDiario } = useSeguimientoDiario(vendedor.id)
 
   const leads = useMemo(() => leadsData ?? [], [leadsData])
   const ops = useMemo(() => opsData ?? [], [opsData])
@@ -193,11 +220,22 @@ export function VendedorSeguimiento() {
     [filtro, accionables, items]
   )
 
+  // ── Gamification ──
+  const diario = useMemo(() => diarioData ?? [], [diarioData])
+  const hoyHechos = diario.find((d) => d.fecha === fechaLocal(new Date()))?.hechos ?? 0
+  const racha = useMemo(() => calcRacha(diario, META_DIARIA), [diario])
+  const cartera =
+    leads.filter((l) => l.estado === "nuevo").length +
+    ops.filter((o) => o.estado !== "cierre_ganado" && o.estado !== "perdido").length
+  const abandonados = useMemo(() => accionables.filter((i) => i.dias >= 7).length, [accionables])
+  const salud = cartera ? Math.round(((cartera - abandonados) / cartera) * 100) : 100
+
   async function registrarContacto(l: Lead) {
     setRegContacto(l.id)
     try {
       await marcarContactado(l.id, l.contactos_intentos)
       reload()
+      reloadDiario()
     } catch (e) {
       toast.error(msgError(e, "No se pudo registrar"))
     } finally {
@@ -219,6 +257,7 @@ export function VendedorSeguimiento() {
       const nombre = rechLead.nombre
       setRechLead(null)
       reload()
+      reloadDiario()
       toast.ok(`${nombre} descartado. Ya no aparece en seguimiento.`)
     } catch (err) {
       toast.error(msgError(err, "No se pudo rechazar"))
@@ -253,6 +292,7 @@ export function VendedorSeguimiento() {
         destinatario_email: email,
       })
       reloadInsc()
+      reloadDiario()
       toast.ok(`${l.nombre} entró en “${seq.nombre}”. Sale el primer mail solo.`)
     } catch (e) {
       toast.error(msgError(e, "No se pudo poner en seguimiento"))
@@ -302,19 +342,23 @@ export function VendedorSeguimiento() {
 
       {loading ? (
         <Cargando que="tu seguimiento" />
-      ) : accionables.length === 0 ? (
-        <Card className="mt-4 flex flex-col items-center p-10 text-center">
-          <span className="grid size-14 place-items-center rounded-2xl bg-[#DFF2E9]">
-            <PartyPopper size={26} className="text-success" />
-          </span>
-          <p className="mt-4 text-[16px] font-semibold text-navy">¡Bandeja en cero! 🎉</p>
-          <p className="mx-auto mt-1 max-w-[46ch] text-[13px] text-slate">
-            No tenés seguimientos pendientes. Todos tus leads y oportunidades están al día. Sumá más desde{" "}
-            <Link to="/leads" className="font-medium text-blue underline">Buscar leads</Link>.
-          </p>
-        </Card>
       ) : (
         <>
+          <GameBar racha={racha} hoy={hoyHechos} meta={META_DIARIA} salud={salud} cartera={cartera} />
+          {accionables.length === 0 ? (
+            <Card className="mt-4 flex flex-col items-center p-10 text-center">
+              <span className="grid size-14 place-items-center rounded-2xl bg-[#DFF2E9]">
+                <PartyPopper size={26} className="text-success" />
+              </span>
+              <p className="mt-4 text-[16px] font-semibold text-navy">¡Bandeja en cero! 🎉</p>
+              <p className="mx-auto mt-1 max-w-[48ch] text-[13px] text-slate">
+                No tenés seguimientos pendientes, todo al día.{" "}
+                {racha > 0 ? `Racha de ${racha} día${racha === 1 ? "" : "s"} 🔥 — no la cortes.` : "Sumá más desde"}{" "}
+                <Link to="/leads" className="font-medium text-blue underline">Buscar leads</Link>.
+              </p>
+            </Card>
+          ) : (
+            <>
           {/* Resumen / game */}
           <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-gradient-to-br from-navy via-[#1d3a6b] to-[#123f52] p-4 text-white">
             <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-mint/20">
@@ -482,10 +526,11 @@ export function VendedorSeguimiento() {
             <Sparkles size={16} className="mt-0.5 shrink-0 text-blue" />
             <p className="leading-relaxed">
               El objetivo es simple: <b className="text-ink">cerrar cada lead</b> — avanzándolo a oportunidad o
-              descartándolo con motivo. Nada debería quedarse sin próximo paso. (Pronto: seguimiento automático
-              sugerido por tipo y racha diaria.)
+              descartándolo con motivo. Nada debería quedarse sin próximo paso.
             </p>
           </div>
+            </>
+          )}
         </>
       )}
 
@@ -530,5 +575,94 @@ export function VendedorSeguimiento() {
         )}
       </Modal>
     </>
+  )
+}
+
+// Barra de "juego": racha, seguimientos de hoy y salud de la cartera.
+function GameBar({
+  racha,
+  hoy,
+  meta,
+  salud,
+  cartera,
+}: {
+  racha: number
+  hoy: number
+  meta: number
+  salud: number
+  cartera: number
+}) {
+  const saludColor = salud >= 80 ? "#1E9E6A" : salud >= 50 ? "#E0A52F" : "#DB3B3B"
+  return (
+    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <Card className="flex items-center gap-3 p-3.5">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#FDE7E1]">
+          <Flame size={20} className="text-coral" />
+        </span>
+        <div className="min-w-0">
+          <div className="text-[10.5px] uppercase tracking-wide text-slate">Racha</div>
+          <div className="text-[18px] font-semibold text-ink">
+            {racha} <span className="text-[12px] font-medium text-slate">día{racha === 1 ? "" : "s"} 🔥</span>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="flex items-center gap-3 p-3.5">
+        <Ring value={hoy} max={meta} />
+        <div className="min-w-0">
+          <div className="text-[10.5px] uppercase tracking-wide text-slate">Hoy</div>
+          <div className="text-[18px] font-semibold text-ink">
+            {hoy}
+            <span className="text-[12px] font-medium text-slate">/{meta}</span>
+            {hoy >= meta && <span className="ml-1 text-[12px] font-semibold text-success">¡meta! ✓</span>}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="flex items-center gap-3 p-3.5">
+        <span
+          className="grid size-10 shrink-0 place-items-center rounded-xl"
+          style={{ background: saludColor + "1F" }}
+        >
+          <HeartPulse size={20} style={{ color: saludColor }} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-[10.5px] uppercase tracking-wide text-slate">Salud de cartera</div>
+          <div className="text-[18px] font-semibold" style={{ color: saludColor }}>
+            {cartera ? `${salud}%` : "—"}
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// Anillo de progreso del día (SVG, sin dependencias).
+function Ring({ value, max }: { value: number; max: number }) {
+  const pct = Math.max(0, Math.min(1, max ? value / max : 0))
+  const r = 16
+  const c = 2 * Math.PI * r
+  const done = pct >= 1
+  return (
+    <svg width="40" height="40" viewBox="0 0 40 40" className="shrink-0">
+      <circle cx="20" cy="20" r={r} fill="none" stroke="#E7EBF1" strokeWidth="4" />
+      <circle
+        cx="20"
+        cy="20"
+        r={r}
+        fill="none"
+        stroke={done ? "#1E9E6A" : "#2F5BE6"}
+        strokeWidth="4"
+        strokeDasharray={c}
+        strokeDashoffset={c * (1 - pct)}
+        strokeLinecap="round"
+        transform="rotate(-90 20 20)"
+      />
+      {done && (
+        <text x="20" y="24.5" textAnchor="middle" fontSize="13" fontWeight="700" fill="#1E9E6A">
+          ✓
+        </text>
+      )}
+    </svg>
   )
 }
