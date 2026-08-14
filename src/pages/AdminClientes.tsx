@@ -67,6 +67,9 @@ export function AdminClientes() {
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
 
+  // Filtro por vendedor asignado ("" = todos, "sin" = sin asignar, o un id).
+  const [vendFiltro, setVendFiltro] = useState<string>("")
+
   // Selección para asignar leads a un vendedor.
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [asignarVend, setAsignarVend] = useState("")
@@ -183,7 +186,7 @@ export function AdminClientes() {
     return { ...c, deuda, prioridad }
   }, [CLIENTES])
 
-  const filtrados =
+  const porSegmento =
     filtro === "cartera"
       ? CLIENTES.filter((c) => c.segmento === "activo" || c.segmento === "ex_cliente")
       : filtro === "todos"
@@ -193,6 +196,11 @@ export function AdminClientes() {
           : filtro === "prioridad"
             ? CLIENTES.filter((c) => c.prioridad)
             : CLIENTES.filter((c) => c.segmento === filtro)
+  // Segunda dimensión: filtro por vendedor asignado (o sin asignar).
+  const filtrados = porSegmento.filter((c) =>
+    !vendFiltro ? true : vendFiltro === "sin" ? c.vendedor_id == null : c.vendedor_id === vendFiltro
+  )
+  const sinAsignarN = porSegmento.filter((c) => c.vendedor_id == null).length
   const nombreVendedor = (id: string | null) => vends.find((v) => v.id === id)?.nombre.split(" ")[0]
 
   const chips: { key: Filtro; label: string; n: number; dot?: string }[] = [
@@ -336,7 +344,7 @@ export function AdminClientes() {
         </Card>
       </div>
 
-      <div className="mb-3 mt-4 flex flex-wrap gap-2">
+      <div className="mb-3 mt-4 flex flex-wrap items-center gap-2">
         {chips.map((c) => (
           <button
             key={c.key}
@@ -351,6 +359,32 @@ export function AdminClientes() {
             <span className="tabular-nums opacity-70">{c.n}</span>
           </button>
         ))}
+
+        {/* Filtro por vendedor asignado (2da dimensión, aparte de los chips) */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-[11.5px] text-slate">Vendedor:</span>
+          <select
+            value={vendFiltro}
+            onChange={(e) => setVendFiltro(e.target.value)}
+            className={cn(
+              "rounded-lg border px-2.5 py-1 text-[12px] font-medium outline-none focus:border-blue",
+              vendFiltro ? "border-blue/40 bg-[#EEF3FE] text-navy" : "border-input bg-white text-slate"
+            )}
+          >
+            <option value="">Todos</option>
+            <option value="sin">⚠ Sin asignar ({sinAsignarN})</option>
+            {vends.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.nombre}
+              </option>
+            ))}
+          </select>
+          {vendFiltro && (
+            <button onClick={() => setVendFiltro("")} className="text-[11.5px] font-medium text-blue hover:underline">
+              limpiar
+            </button>
+          )}
+        </div>
       </div>
 
       {filtro === "prospeccion" && (
