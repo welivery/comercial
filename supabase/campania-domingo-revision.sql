@@ -1,8 +1,8 @@
 -- REVISIÓN / LIMPIEZA de la campaña "Entrega Domingo".
--- Objetivo: que ningún lead de campaña sea en realidad un cliente sin avisar, y
--- limpiar duplicados por variantes de nombre (ej: "Mr Click" vs "MrClick").
--- Correr por SECCIONES en el SQL Editor (seleccionar el bloque → Run). Las
--- secciones 3 y 4 son SELECT de auditoría (no cambian nada): mirá el resultado.
+-- USO SIMPLE: pegá TODO este archivo en el SQL Editor de Supabase y apretá Run
+-- una sola vez. Primero limpia duplicados y al final te MUESTRA una tabla para
+-- revisar (cuáles ya son clientes y cuáles podrían ser un cliente repetido).
+-- No borra clientes ni leads ya trabajados: solo prospectos de campaña sin asignar.
 
 -- Normalizador alfanumérico (sin espacios ni símbolos) para cazar variantes.
 create or replace function _alnum(txt text) returns text
@@ -10,11 +10,13 @@ language sql immutable as $$
   select regexp_replace(translate(lower(coalesce(txt,'')),'áéíóúüñ','aeiouun'),'[^a-z0-9]','','g')
 $$;
 
--- ─────────────────── 1) DEDUP de campaña por nombre alfanumérico ───────────────────
--- Entre filas de campaña con el MISMO nombre (ignorando espacios/símbolos), deja
--- la "mejor" (cliente activo > ex-cliente > prospección; con contacto; mejor
--- score) y borra las otras SOLO si son prospección sin asignar (no toca clientes
--- ni leads ya trabajados). Cubre Mr Click/MrClick, Lippi Outdoor/LippiOutdoor, etc.
+-- Necesario para el "parecido" de nombres (fuzzy) de la tabla final.
+create extension if not exists pg_trgm;
+
+-- ── Limpieza: fusiona filas de campaña con el MISMO nombre (ignorando espacios/
+--    símbolos): deja la mejor (cliente activo > ex-cliente > prospección; con
+--    contacto; mejor score) y borra las otras SOLO si son prospección sin asignar.
+--    Cubre Mr Click/MrClick, Lippi Outdoor/LippiOutdoor, etc.
 with ranked as (
   select id, segmento, vendedor_id,
     row_number() over (
@@ -34,45 +36,32 @@ where c.id = r.id
   and c.segmento = 'prospeccion'
   and c.vendedor_id is null;
 
--- ─────────────────── 2) (opcional) Requiere pg_trgm para el fuzzy de la sección 4 ───────────────────
-create extension if not exists pg_trgm;
-
--- ─────────────────── 3) AUDITORÍA: campaña que YA es cliente ───────────────────
--- Mostrá esto y revisá que el segmento sea correcto. Si algo figura mal (ej:
--- "baja" que en realidad está activo), corregilo desde la ficha (botón editar,
--- campo Segmento). Ordena clientes/ex-clientes arriba.
+-- ── Resultado final: la tabla para REVISAR. Los que ya son clientes van arriba.
+--    Si un prospecto tiene un "posible_cliente_existente", probablemente es la
+--    misma empresa escrita distinto (ej: "Mr Click" ≈ "Mr Clic") → unificá.
+--    Si un estado está mal (una baja que sigue activa), corregí el segmento desde
+--    la ficha (botón editar de la fila).
 select
   case c.segmento
-    when 'activo'     then '✅ CLIENTE ACTIVO — ofrecer domingo como upsell (no prospección fría)'
-    when 'ex_cliente' then '⚠️ EX-CLIENTE (baja) — reconquista + gancho domingo (¿el estado es correcto?)'
-    else '· prospecto nuevo'
+    when 'activo'     then '✅ YA ES CLIENTE ACTIVO'
+    when 'ex_cliente' then '⚠️ EX-CLIENTE (baja)'
+    else                   'prospecto nuevo'
   end as estado,
-  c.nombre, c.segmento, c.envios_mes, c.prioridad_score,
-  v.nombre as vendedor, left(c.nota, 120) as nota
+  c.nombre,
+  c.segmento,
+  (
+    select c2.nombre || ' (' || c2.segmento || ')'
+    from clientes c2
+    where c2.id <> c.id
+      and c2.segmento in ('activo','ex_cliente')
+      and similarity(c2.nombre, c.nombre) > 0.55
+    order by similarity(c2.nombre, c.nombre) desc
+    limit 1
+  ) as posible_cliente_existente,
+  c.envios_mes,
+  c.prioridad_score
 from clientes c
-left join vendedores v on v.id = c.vendedor_id
 where c.prioridad
 order by
   case c.segmento when 'activo' then 0 when 'ex_cliente' then 1 else 2 end,
   c.nombre;
-
--- ─────────────────── 4) AUDITORÍA FUZZY: prospecto de campaña PARECIDO a un cliente ───────────────────
--- Caza los que entraron como prospecto nuevo pero probablemente YA existen en tu
--- base con el nombre escrito distinto (ej: "Mr Click" ≈ "Mr Clic"). Revisá cada
--- par: si son la misma empresa, borrá el prospecto duplicado y quedate con el
--- cliente (o corregí el nombre). No borra nada solo.
-select
-  p.nombre as prospecto_campania,
-  c.nombre as cliente_en_base,
-  c.segmento as segmento_cliente,
-  round(similarity(p.nombre, c.nombre)::numeric, 2) as parecido
-from clientes p
-join clientes c
-  on c.id <> p.id
-  and c.segmento in ('activo','ex_cliente')
-  and similarity(p.nombre, c.nombre) > 0.55
-where p.prioridad and p.segmento = 'prospeccion'
-order by parecido desc, p.nombre;
-
--- Al terminar podés limpiar el helper (opcional):
--- drop function if exists _alnum(text);
