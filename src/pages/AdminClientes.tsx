@@ -32,7 +32,8 @@ const MOTIVO_COLOR: Record<MotivoBaja, string> = {
 const SEGMENTOS: SegmentoCliente[] = ["activo", "ex_cliente", "prospeccion"]
 const MOTIVOS: MotivoBaja[] = ["precio", "servicio", "cerro", "deuda", "otro"]
 
-type Filtro = "todos" | SegmentoCliente | "deuda"
+// "cartera" = activos + ex-clientes (la base real del día a día, sin prospección).
+type Filtro = "cartera" | "todos" | SegmentoCliente | "deuda"
 
 const VACIO: ClienteInput = {
   nombre: "",
@@ -50,7 +51,7 @@ const VACIO: ClienteInput = {
 }
 
 export function AdminClientes() {
-  const [filtro, setFiltro] = useState<Filtro>("todos")
+  const [filtro, setFiltro] = useState<Filtro>("cartera")
   const toast = useToast()
   const { data: clientes, loading, error, reload } = useClientes()
   const { data: vendedores } = useVendedores()
@@ -175,19 +176,22 @@ export function AdminClientes() {
   }, [CLIENTES])
 
   const filtrados =
-    filtro === "todos"
-      ? CLIENTES
-      : filtro === "deuda"
-        ? CLIENTES.filter((c) => c.deuda)
-        : CLIENTES.filter((c) => c.segmento === filtro)
+    filtro === "cartera"
+      ? CLIENTES.filter((c) => c.segmento === "activo" || c.segmento === "ex_cliente")
+      : filtro === "todos"
+        ? CLIENTES
+        : filtro === "deuda"
+          ? CLIENTES.filter((c) => c.deuda)
+          : CLIENTES.filter((c) => c.segmento === filtro)
   const nombreVendedor = (id: string | null) => vends.find((v) => v.id === id)?.nombre.split(" ")[0]
 
   const chips: { key: Filtro; label: string; n: number; dot?: string }[] = [
-    { key: "todos", label: "Todos", n: CLIENTES.length },
+    { key: "cartera", label: "Cartera", n: counts.activo + counts.ex_cliente },
     { key: "activo", label: "Activos", n: counts.activo, dot: "#1E9E6A" },
     { key: "ex_cliente", label: "Ex-clientes", n: counts.ex_cliente, dot: "#F2563A" },
     { key: "prospeccion", label: "Prospección", n: counts.prospeccion, dot: "#2F5BE6" },
     { key: "deuda", label: "Con deuda", n: counts.deuda, dot: "#DB3B3B" },
+    { key: "todos", label: "Todos", n: CLIENTES.length },
   ]
 
   function abrirNuevo() {
@@ -305,6 +309,17 @@ export function AdminClientes() {
         ))}
       </div>
 
+      {filtro === "prospeccion" && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
+          <Sparkles size={14} className="mt-0.5 shrink-0 text-blue" />
+          <span>
+            Empresas en prospección — se crean solas al trabajar un lead (editar su contacto, pasarlo a
+            oportunidad o ponerlo en secuencia). Son el mismo registro que usa toda la app; cuando cierran, pasalas
+            a <b className="font-medium text-ink">Activo</b>.
+          </span>
+        </div>
+      )}
+
       <Card className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
@@ -395,7 +410,7 @@ export function AdminClientes() {
             {filtrados.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-8 text-center text-[13px] text-slate">
-                  No hay clientes en este segmento.
+                  No hay clientes para este filtro.
                 </td>
               </tr>
             )}
