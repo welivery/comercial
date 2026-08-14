@@ -482,9 +482,27 @@ export async function fetchEventos(oportunidadId: string): Promise<OportunidadEv
   return check(data, error).map(mapEvento)
 }
 
+// Trae TODA la base. Supabase corta cada consulta en 1000 filas, así que
+// paginamos con .range() hasta que una página vuelva incompleta. Con la base ya
+// arriba de 1000 (ex-clientes + prospección + campañas), sin esto se perdían
+// filas (los leads de campaña, que ordenan último, quedaban fuera de la ventana).
 export async function fetchClientes(): Promise<Cliente[]> {
-  const { data, error } = await supabase.from("clientes").select("*").order("segmento")
-  return check(data, error).map(mapCliente)
+  const PAGE = 1000
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const todas: any[] = []
+  for (let desde = 0; ; desde += PAGE) {
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("*")
+      .order("segmento")
+      .order("nombre")
+      .range(desde, desde + PAGE - 1)
+    if (error) throw new Error(error.message)
+    todas.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  return todas.map(mapCliente)
 }
 
 export async function fetchCliente(id: string): Promise<Cliente | null> {
