@@ -116,6 +116,10 @@ export function VendedorLeads() {
   const leads = useMemo(() => leadsData ?? [], [leadsData])
 
   const seqActivas = useMemo(() => (secuencias ?? []).filter((s) => s.activo), [secuencias])
+  // Sugerencia por campaña: si el lead es de una campaña (ej: "Entrega Domingo")
+  // y existe una secuencia con ese nombre, la proponemos por defecto.
+  const seqDeCampania = (campania: string | null | undefined) =>
+    campania ? seqActivas.find((s) => s.nombre.toLowerCase().includes(campania.toLowerCase())) : undefined
   const inscByLead = useMemo(() => {
     const m = new Map<string, SecuenciaInscripcion>()
     for (const i of inscripciones ?? []) {
@@ -417,7 +421,8 @@ export function VendedorLeads() {
 
   function abrirSecuencia(l: Lead) {
     setSeqLead(l)
-    setSeqId(seqActivas[0]?.id ?? "")
+    // Si es lead de campaña y hay una secuencia de esa campaña, la sugerimos.
+    setSeqId(seqDeCampania(l.campania)?.id ?? seqActivas[0]?.id ?? "")
     setSeqEmail(emailDe(l) ?? "")
     setSeqErr(null)
   }
@@ -456,7 +461,11 @@ export function VendedorLeads() {
   }
 
   function abrirBulk() {
-    setBulkSeqId(seqActivas[0]?.id ?? "")
+    // Si todos los seleccionados son de la misma campaña, sugerimos su secuencia.
+    const elegidos = visibles.filter((l) => sel.has(l.id) && l.estado === "nuevo")
+    const camps = new Set(elegidos.map((l) => l.campania).filter(Boolean))
+    const sug = camps.size === 1 ? seqDeCampania([...camps][0]) : undefined
+    setBulkSeqId(sug?.id ?? seqActivas[0]?.id ?? "")
     setBulkErr(null)
     setBulkOpen(true)
   }
@@ -1376,6 +1385,29 @@ export function VendedorLeads() {
                     ))}
                   </select>
                 </label>
+                {seqLead.campania &&
+                  (() => {
+                    const sug = seqDeCampania(seqLead.campania)
+                    return (
+                      <div className="-mt-1.5 flex items-start gap-1.5 rounded-lg bg-[#FDE7E2] px-2.5 py-1.5 text-[11.5px] text-[#8a3a2a]">
+                        <Zap size={13} className="mt-0.5 shrink-0 text-coral" />
+                        {sug ? (
+                          <span>
+                            Lead de la campaña <b>{seqLead.campania}</b> → te sugerimos la secuencia{" "}
+                            <b>«{sug.nombre}»</b> (ya seleccionada).
+                          </span>
+                        ) : (
+                          <span>
+                            Lead de la campaña <b>{seqLead.campania}</b>. Todavía no hay una secuencia con ese nombre —{" "}
+                            <Link to="/secuencias" className="font-medium underline">
+                              creala
+                            </Link>{" "}
+                            para inscribir estos leads juntos.
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[12px] font-medium text-slate">Email del destinatario</span>
                   <input
@@ -1436,6 +1468,31 @@ export function VendedorLeads() {
                   ))}
                 </select>
               </label>
+              {(() => {
+                const elegidos = visibles.filter((l) => sel.has(l.id) && l.estado === "nuevo")
+                const camps = new Set(elegidos.map((l) => l.campania).filter(Boolean) as string[])
+                if (camps.size !== 1) return null
+                const campania = [...camps][0]
+                const sug = seqDeCampania(campania)
+                return (
+                  <div className="-mt-1.5 flex items-start gap-1.5 rounded-lg bg-[#FDE7E2] px-2.5 py-1.5 text-[11.5px] text-[#8a3a2a]">
+                    <Zap size={13} className="mt-0.5 shrink-0 text-coral" />
+                    {sug ? (
+                      <span>
+                        Leads de la campaña <b>{campania}</b> → te sugerimos la secuencia <b>«{sug.nombre}»</b>.
+                      </span>
+                    ) : (
+                      <span>
+                        Leads de la campaña <b>{campania}</b>: no hay una secuencia con ese nombre —{" "}
+                        <Link to="/secuencias" className="font-medium underline">
+                          creala
+                        </Link>
+                        .
+                      </span>
+                    )}
+                  </div>
+                )
+              })()}
               {bulkErr && <div className="rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{bulkErr}</div>}
             </>
           )}
