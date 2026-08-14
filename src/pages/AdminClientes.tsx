@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { AlertTriangle, Pencil, Plus, Sparkles, Trash2, Upload } from "lucide-react"
+import { AlertTriangle, Pencil, Plus, Sparkles, Trash2, Upload, Zap } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
@@ -33,7 +33,7 @@ const SEGMENTOS: SegmentoCliente[] = ["activo", "ex_cliente", "prospeccion"]
 const MOTIVOS: MotivoBaja[] = ["precio", "servicio", "cerro", "deuda", "otro"]
 
 // "cartera" = activos + ex-clientes (la base real del día a día, sin prospección).
-type Filtro = "cartera" | "todos" | SegmentoCliente | "deuda"
+type Filtro = "cartera" | "todos" | SegmentoCliente | "deuda" | "prioridad"
 
 const VACIO: ClienteInput = {
   nombre: "",
@@ -168,11 +168,13 @@ export function AdminClientes() {
   const counts = useMemo(() => {
     const c = { activo: 0, ex_cliente: 0, prospeccion: 0 } as Record<SegmentoCliente, number>
     let deuda = 0
+    let prioridad = 0
     for (const cl of CLIENTES) {
       c[cl.segmento]++
       if (cl.deuda) deuda++
+      if (cl.prioridad) prioridad++
     }
-    return { ...c, deuda }
+    return { ...c, deuda, prioridad }
   }, [CLIENTES])
 
   const filtrados =
@@ -182,7 +184,9 @@ export function AdminClientes() {
         ? CLIENTES
         : filtro === "deuda"
           ? CLIENTES.filter((c) => c.deuda)
-          : CLIENTES.filter((c) => c.segmento === filtro)
+          : filtro === "prioridad"
+            ? CLIENTES.filter((c) => c.prioridad)
+            : CLIENTES.filter((c) => c.segmento === filtro)
   const nombreVendedor = (id: string | null) => vends.find((v) => v.id === id)?.nombre.split(" ")[0]
 
   const chips: { key: Filtro; label: string; n: number; dot?: string }[] = [
@@ -190,6 +194,7 @@ export function AdminClientes() {
     { key: "activo", label: "Activos", n: counts.activo, dot: "#1E9E6A" },
     { key: "ex_cliente", label: "Ex-clientes", n: counts.ex_cliente, dot: "#F2563A" },
     { key: "prospeccion", label: "Prospección", n: counts.prospeccion, dot: "#2F5BE6" },
+    ...(counts.prioridad ? [{ key: "prioridad" as Filtro, label: "⚡ Campaña", n: counts.prioridad, dot: "#F2563A" }] : []),
     { key: "deuda", label: "Con deuda", n: counts.deuda, dot: "#DB3B3B" },
     { key: "todos", label: "Todos", n: CLIENTES.length },
   ]
@@ -343,6 +348,14 @@ export function AdminClientes() {
                       {iniciales(c.nombre)}
                     </span>
                     <span className="text-[13px] font-medium text-ink">{c.nombre}</span>
+                    {c.prioridad && (
+                      <span
+                        title={c.campania ? `Campaña ${c.campania} · prioridad de contacto` : "Prioridad de contacto"}
+                        className="inline-flex items-center gap-1 rounded-full bg-[#FDE7E2] px-2 py-0.5 text-[10.5px] font-semibold text-coral"
+                      >
+                        <Zap size={11} /> {c.campania ?? "Campaña"}
+                      </span>
+                    )}
                     {c.deuda && (
                       <span
                         title={c.deuda_nota ?? "Deuda / problema de pago"}

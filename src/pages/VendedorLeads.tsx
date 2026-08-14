@@ -15,6 +15,7 @@ import {
   Send,
   Sparkles,
   Undo2,
+  Zap,
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -220,7 +221,12 @@ export function VendedorLeads() {
           contFiltro === "todos" ||
           (contFiltro === "contactados" ? l.contactos_intentos > 0 : l.contactos_intentos === 0)
       )
-      .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+      // Prioridad de campaña primero; dentro, lo más nuevo arriba.
+      .sort(
+        (a, b) =>
+          Number(b.prioridad) - Number(a.prioridad) ||
+          (b.created_at || "").localeCompare(a.created_at || "")
+      )
     return {
       kpi: { traidos: enRango.length, nuevos, conv, rech, pct: enRango.length ? Math.round((conv / enRango.length) * 100) : 0 },
       visibles: lista,
@@ -856,6 +862,14 @@ export function VendedorLeads() {
                                   <Maximize2 size={11} className="text-muted group-hover:text-blue" />
                                 </button>
                                 <BucketChip bucket={l.bucket} short />
+                                {l.prioridad && (
+                                  <span
+                                    title={l.campania ? `Campaña ${l.campania} · contactar primero` : "Lead prioritario"}
+                                    className="inline-flex items-center gap-1 rounded-full bg-[#FDE7E2] px-1.5 py-0.5 text-[10.5px] font-semibold text-coral"
+                                  >
+                                    <Zap size={10} /> {l.campania ?? "Prioridad"}
+                                  </span>
+                                )}
                                 {l.estado === "nuevo" &&
                                   (l.reconquista ? (
                                     <span className="rounded-full bg-[#FBEFD4] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#a5741a]">
@@ -1133,6 +1147,14 @@ export function VendedorLeads() {
                 <div className="text-[15px] font-semibold text-ink">{detalleLead.nombre}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <BucketChip bucket={detalleLead.bucket} short />
+                  {detalleLead.prioridad && (
+                    <span
+                      title={detalleLead.campania ? `Campaña ${detalleLead.campania} · contactar primero` : "Lead prioritario"}
+                      className="inline-flex items-center gap-1 rounded-full bg-[#FDE7E2] px-1.5 py-0.5 text-[10.5px] font-semibold text-coral"
+                    >
+                      <Zap size={10} /> {detalleLead.campania ?? "Prioridad"}
+                    </span>
+                  )}
                   {detalleLead.reconquista && (
                     <span className="rounded-full bg-[#FBEFD4] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#a5741a]">
                       Reconquista

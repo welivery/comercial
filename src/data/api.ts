@@ -120,6 +120,8 @@ function mapCliente(r: any): Cliente {
     comuna: r.comuna ?? null,
     deuda: r.deuda ?? false,
     deuda_nota: r.deuda_nota ?? null,
+    prioridad: !!r.prioridad,
+    campania: r.campania ?? null,
     nota: r.nota ?? "",
   }
 }
@@ -644,6 +646,8 @@ function mapLead(r: any): Lead {
     contactos_intentos: r.contactos_intentos ?? 0,
     ultimo_contacto_at: r.ultimo_contacto_at ?? null,
     cliente_id: r.cliente_id ?? null,
+    prioridad: !!r.prioridad,
+    campania: r.campania ?? null,
     oportunidad_id: r.oportunidad_id ?? null,
     created_at: r.created_at,
   }
@@ -741,10 +745,13 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
   const [baseRes, leadsRes] = await Promise.all([
     supabase
       .from("clientes")
-      .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id, contacto, email, telefono, comuna")
+      .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id, contacto, email, telefono, comuna, prioridad, campania, prioridad_score")
       .in("segmento", ["ex_cliente", "prospeccion"])
       .eq("deuda", false) // los deudores no se prospectan automáticamente
       .or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
+      // Prioridad de campaña primero (mejor score antes); luego, por volumen.
+      .order("prioridad", { ascending: false })
+      .order("prioridad_score", { ascending: false })
       .order("envios_mes", { ascending: false }),
     supabase.from("leads").select("clave").eq("vendedor_id", vendedorId),
   ])
@@ -759,15 +766,21 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
     if (yaHay.has(clave) || vistos.has(clave)) continue
     vistos.add(clave)
     const esEx = c.segmento === "ex_cliente"
+    const esCampania = !!c.prioridad
     // El contacto (persona/email/tel/comuna) ya son campos propios; el motivo
-    // solo describe POR QUÉ es un lead, sin repetir datos de contacto.
-    const motivo = esEx
-      ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
-        (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
-        (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
-      : `Prospecto de tu base.` +
-        (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
-        (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+    // solo describe POR QUÉ es un lead, sin repetir datos de contacto. Para leads
+    // de campaña, arranca con la campaña (prioridad) y suma la nota (que trae la
+    // señal, tier, evidencia, etc.).
+    const motivo = esCampania
+      ? `⚡ Campaña ${c.campania ?? "prioritaria"} — contactar primero.` +
+        (c.nota ? ` ${String(c.nota).slice(0, 240)}` : "")
+      : esEx
+        ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
+          (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
+          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+        : `Prospecto de tu base.` +
+          (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
+          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
     elegidos.push({
       id: c.id,
       sinAsignar: c.vendedor_id == null,
@@ -776,13 +789,19 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
         nombre: c.nombre,
         clave,
         bucket: c.bucket,
-        fit: esEx ? 70 : 60,
+        fit: esCampania ? 90 : esEx ? 70 : 60,
         reconquista: esEx,
+        prioridad: esCampania,
+        campania: c.campania ?? null,
         motivo,
         email: c.email ?? null,
         telefono: c.telefono ?? null,
         contacto: c.contacto ?? null,
-        fuentes: [{ tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null }],
+        fuentes: [
+          esCampania
+            ? { tipo: "tendencia", detalle: `Campaña ${c.campania ?? "prioritaria"}`, url: null }
+            : { tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null },
+        ],
         origen: "base",
         estado: "nuevo",
       },

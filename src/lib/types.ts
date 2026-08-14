@@ -114,6 +114,8 @@ export interface Cliente {
   comuna: string | null
   deuda: boolean // true = deuda / problema de pago → fuera de prospección automática
   deuda_nota: string | null
+  prioridad: boolean // empresa de campaña con prioridad de contacto (se siembra primero)
+  campania: string | null // etiqueta de la campaña (ej: "Entrega Domingo")
   nota: string
 }
 
@@ -159,6 +161,8 @@ export interface Lead {
   contactos_intentos: number // veces que se lo contactó sin respuesta (reintentos)
   ultimo_contacto_at: string | null // fecha del último intento de contacto
   cliente_id: string | null // empresa vinculada (registro único), si ya se creó/matcheó
+  prioridad: boolean // lead de campaña con prioridad de contacto (se asigna primero)
+  campania: string | null // etiqueta de la campaña que le da prioridad (ej: "Entrega Domingo")
   oportunidad_id: string | null
   created_at: string
 }
