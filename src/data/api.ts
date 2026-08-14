@@ -889,19 +889,41 @@ export async function marcarContactado(id: string, intentosActuales: number): Pr
   return n
 }
 
-// Edita los datos de contacto de un lead (persona, email, teléfono, web) en las
-// COLUMNAS reales de la base — no en el texto del motivo. Así el dato que el
-// vendedor consigue queda consistente y usable (secuencias, mailto/tel) al toque.
-// Los strings vacíos se guardan como null para no dejar "" sueltos.
+// Edita el contacto de un lead. Registro único: el contacto (persona/email/
+// teléfono) vive en la EMPRESA. Editar el lead asegura su empresa (crea/matchea
+// por nombre), la vincula al lead y ESCRIBE el contacto ahí (la empresa manda:
+// pisa con lo editado). La copia inline del lead se mantiene sincronizada porque
+// la usan las secuencias y los mailto/tel de la tarjeta. `web` es solo del lead.
 export async function actualizarLead(
-  id: string,
+  lead: Lead,
   patch: Partial<{ contacto: string; email: string; telefono: string; web: string }>
 ): Promise<void> {
-  const limpio: Record<string, string | null> = { updated_at: new Date().toISOString() }
+  let clienteId = lead.cliente_id
+  if (!clienteId) {
+    clienteId = await asegurarEmpresa({
+      nombre: lead.nombre,
+      vendedor_id: lead.vendedor_id,
+      bucket: lead.bucket,
+    })
+  }
+  // 1) Empresa = fuente de verdad: pisa contacto/email/teléfono con lo editado.
+  const empresaPatch: Record<string, string | null> = {}
+  for (const k of ["contacto", "email", "telefono"] as const) {
+    if (k in patch) empresaPatch[k] = (patch[k] ?? "").trim() || null
+  }
+  if (Object.keys(empresaPatch).length) {
+    const { error } = await supabase.from("clientes").update(empresaPatch).eq("id", clienteId)
+    if (error) throw new Error(error.message)
+  }
+  // 2) Copia inline del lead + link a la empresa. Vacío → null.
+  const limpio: Record<string, string | null> = {
+    updated_at: new Date().toISOString(),
+    cliente_id: clienteId,
+  }
   for (const [k, v] of Object.entries(patch)) {
     limpio[k] = typeof v === "string" ? v.trim() || null : null
   }
-  const { error } = await supabase.from("leads").update(limpio).eq("id", id)
+  const { error } = await supabase.from("leads").update(limpio).eq("id", lead.id)
   if (error) throw new Error(error.message)
 }
 

@@ -27,6 +27,7 @@ import {
   actualizarLead,
   asignarLeads,
   convertirLead,
+  fetchCliente,
   inscribir,
   limpiarContacto,
   marcarContactado,
@@ -339,16 +340,33 @@ export function VendedorLeads() {
     }
   }
 
-  function abrirEditar(l: Lead) {
+  async function abrirEditar(l: Lead) {
     setEditLead(l)
     setEditErr(null)
-    // Prefill desde las columnas o, para leads viejos, desde el texto del motivo.
+    // Prefill desde el lead (o el texto del motivo, para leads viejos).
     setEditForm({
       contacto: contactoDe(l) ?? "",
       email: emailDe(l) ?? "",
       telefono: telDe(l) ?? "",
       web: l.web ?? "",
     })
+    // Registro único: si el lead ya tiene empresa, el contacto manda desde ahí
+    // (puede tener datos cargados desde la oportunidad o la base). Lo traemos.
+    if (l.cliente_id) {
+      try {
+        const emp = await fetchCliente(l.cliente_id)
+        if (emp) {
+          setEditForm({
+            contacto: emp.contacto ?? contactoDe(l) ?? "",
+            email: emp.email ?? emailDe(l) ?? "",
+            telefono: emp.telefono ?? telDe(l) ?? "",
+            web: l.web ?? "",
+          })
+        }
+      } catch {
+        /* si falla, quedan los datos del lead */
+      }
+    }
   }
 
   async function guardarEdicion(e: React.FormEvent) {
@@ -357,7 +375,7 @@ export function VendedorLeads() {
     setEditSaving(true)
     setEditErr(null)
     try {
-      await actualizarLead(editLead.id, editForm)
+      await actualizarLead(editLead, editForm)
       const nombre = editLead.nombre
       setEditLead(null)
       reload()
@@ -1253,8 +1271,8 @@ export function VendedorLeads() {
         {editLead && (
           <form onSubmit={guardarEdicion} className="flex flex-col gap-3.5">
             <p className="rounded-lg bg-mist/70 px-3 py-2 text-[12px] text-slate">
-              Completá o corregí los datos de <b className="text-ink">{editLead.nombre}</b>. Quedan guardados en la
-              base y listos para usar (secuencias, llamada, mail).
+              Completá o corregí el contacto de <b className="text-ink">{editLead.nombre}</b>. Se guarda en la
+              empresa (un solo lugar) y queda disponible en sus oportunidades, secuencias y campañas.
             </p>
             <label className="flex flex-col gap-1.5">
               <span className="text-[12px] font-medium text-slate">Persona de contacto</span>
