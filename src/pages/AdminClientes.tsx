@@ -325,6 +325,32 @@ export function AdminClientes() {
         </div>
       )}
 
+      {filtro === "prioridad" && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-coral/30 bg-[#FDEFEC] px-3 py-2.5 text-[12px] text-[#8a3a2a]">
+          <Zap size={14} className="mt-0.5 shrink-0 text-coral" />
+          <div className="leading-relaxed">
+            <b className="font-semibold">Fijate el segmento de cada fila antes de contactar.</b> No todos son prospectos
+            nuevos:
+            {(() => {
+              const camp = CLIENTES.filter((c) => c.prioridad)
+              const act = camp.filter((c) => c.segmento === "activo").length
+              const ex = camp.filter((c) => c.segmento === "ex_cliente").length
+              const pro = camp.filter((c) => c.segmento === "prospeccion").length
+              return (
+                <span>
+                  {" "}
+                  <b className="text-success">{act} ya son clientes activos</b> (ofrecéles domingo como upsell, no
+                  prospección fría) · <b className="text-coral">{ex} ex-clientes</b> (reconquista + gancho domingo) ·{" "}
+                  {pro} prospectos nuevos.
+                </span>
+              )
+            })()}{" "}
+            Si alguno figura con el segmento equivocado (ej: una baja que en realidad sigue activa), corregilo desde el
+            botón editar de la fila.
+          </div>
+        </div>
+      )}
+
       <Card className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
