@@ -751,6 +751,98 @@ export async function fetchLeadsEquipo(): Promise<LeadActividad[]> {
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
+// Construye la fila de `leads` a partir de un cliente de la base (ex-cliente,
+// prospección o de campaña). Centraliza el motivo/fit/fuentes para que la siembra
+// automática y la asignación manual del admin generen leads idénticos.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function filaLeadDesdeCliente(c: any, vendedorId: string): Record<string, unknown> {
+  const esEx = c.segmento === "ex_cliente"
+  const esCampania = !!c.prioridad
+  const motivo = esCampania
+    ? `⚡ Campaña ${c.campania ?? "prioritaria"} — contactar primero.` +
+      (c.nota ? ` ${String(c.nota).slice(0, 240)}` : "")
+    : esEx
+      ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
+        (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
+        (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+      : `Prospecto de tu base.` +
+        (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
+        (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
+  return {
+    vendedor_id: vendedorId,
+    nombre: c.nombre,
+    clave: claveLead(c.nombre),
+    bucket: c.bucket,
+    fit: esCampania ? 90 : esEx ? 70 : 60,
+    reconquista: esEx,
+    prioridad: esCampania,
+    campania: c.campania ?? null,
+    cliente_id: c.id, // registro único: el lead queda linkeado a su empresa
+    motivo,
+    email: c.email ?? null,
+    telefono: c.telefono ?? null,
+    contacto: c.contacto ?? null,
+    fuentes: [
+      esCampania
+        ? { tipo: "tendencia", detalle: `Campaña ${c.campania ?? "prioritaria"}`, url: null }
+        : { tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null },
+    ],
+    origen: "base",
+    estado: "nuevo",
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// Asignación manual del admin: toma clientes de la base y los carga como leads
+// "a contactar" en la bandeja de un vendedor específico. Respeta las reglas de
+// dedup: no duplica dentro del vendedor (onConflict clave) y salta los que ya son
+// de OTRO vendedor (no se roban leads entre vendedores). Reclama los sin asignar.
+export async function asignarClientesAVendedor(
+  clienteIds: string[],
+  vendedorId: string
+): Promise<{ creados: number; duplicados: number; deOtroVendedor: number }> {
+  if (!clienteIds.length || !vendedorId) return { creados: 0, duplicados: 0, deOtroVendedor: 0 }
+  const { data: cls, error } = await supabase
+    .from("clientes")
+    .select("id, nombre, segmento, bucket, envios_mes, motivo_baja, nota, vendedor_id, contacto, email, telefono, prioridad, campania")
+    .in("id", clienteIds)
+  if (error) throw new Error(error.message)
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const todos = (cls ?? []) as any[]
+  // No pisar clientes que ya son de otro vendedor.
+  const asignables = todos.filter((c) => c.vendedor_id == null || c.vendedor_id === vendedorId)
+  const deOtroVendedor = todos.length - asignables.length
+  if (!asignables.length) return { creados: 0, duplicados: 0, deOtroVendedor }
+
+  // Dedup dentro del propio lote por clave y contra lo que el vendedor ya tiene.
+  const { data: yaLeads } = await supabase.from("leads").select("clave").eq("vendedor_id", vendedorId)
+  const yaHay = new Set((yaLeads ?? []).map((l: { clave: string }) => l.clave))
+  const vistos = new Set<string>()
+  const filas: Record<string, unknown>[] = []
+  for (const c of asignables) {
+    const clave = claveLead(c.nombre)
+    if (yaHay.has(clave) || vistos.has(clave)) continue
+    vistos.add(clave)
+    filas.push(filaLeadDesdeCliente(c, vendedorId))
+  }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  let creados = 0
+  if (filas.length) {
+    const { data: ins, error: insErr } = await supabase
+      .from("leads")
+      .upsert(filas, { onConflict: "vendedor_id,clave", ignoreDuplicates: true })
+      .select("id")
+    if (insErr) throw new Error(insErr.message)
+    creados = ins?.length ?? 0
+  }
+  // Reclamar los clientes sin dueño para que no se siembren en otro vendedor.
+  const idsSinAsignar = asignables.filter((c) => c.vendedor_id == null).map((c) => c.id)
+  if (idsSinAsignar.length) {
+    await supabase.from("clientes").update({ vendedor_id: vendedorId }).in("id", idsSinAsignar).is("vendedor_id", null)
+  }
+  return { creados, duplicados: asignables.length - creados, deOtroVendedor }
+}
+
 // Tamaño del "cupo" diario: cuántos leads de la base trae cada vez.
 export const LOTE_LEADS_BASE = 20
 
@@ -783,46 +875,10 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
     const clave = claveLead(c.nombre)
     if (yaHay.has(clave) || vistos.has(clave)) continue
     vistos.add(clave)
-    const esEx = c.segmento === "ex_cliente"
-    const esCampania = !!c.prioridad
-    // El contacto (persona/email/tel/comuna) ya son campos propios; el motivo
-    // solo describe POR QUÉ es un lead, sin repetir datos de contacto. Para leads
-    // de campaña, arranca con la campaña (prioridad) y suma la nota (que trae la
-    // señal, tier, evidencia, etc.).
-    const motivo = esCampania
-      ? `⚡ Campaña ${c.campania ?? "prioritaria"} — contactar primero.` +
-        (c.nota ? ` ${String(c.nota).slice(0, 240)}` : "")
-      : esEx
-        ? `Ex-cliente${c.motivo_baja ? ` (se fue por ${MOTIVO_BAJA_TXT[c.motivo_baja as MotivoBaja] ?? c.motivo_baja})` : ""}.` +
-          (c.envios_mes ? ` Hacía ~${c.envios_mes} envíos/mes.` : "") +
-          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
-        : `Prospecto de tu base.` +
-          (c.envios_mes ? ` ~${c.envios_mes} envíos/mes estimados.` : "") +
-          (c.nota ? ` ${String(c.nota).slice(0, 160)}` : "")
     elegidos.push({
       id: c.id,
       sinAsignar: c.vendedor_id == null,
-      fila: {
-        vendedor_id: vendedorId,
-        nombre: c.nombre,
-        clave,
-        bucket: c.bucket,
-        fit: esCampania ? 90 : esEx ? 70 : 60,
-        reconquista: esEx,
-        prioridad: esCampania,
-        campania: c.campania ?? null,
-        motivo,
-        email: c.email ?? null,
-        telefono: c.telefono ?? null,
-        contacto: c.contacto ?? null,
-        fuentes: [
-          esCampania
-            ? { tipo: "tendencia", detalle: `Campaña ${c.campania ?? "prioritaria"}`, url: null }
-            : { tipo: "base", detalle: esEx ? "Tu base · ex-cliente" : "Tu base · prospección", url: null },
-        ],
-        origen: "base",
-        estado: "nuevo",
-      },
+      fila: filaLeadDesdeCliente(c, vendedorId),
     })
     if (elegidos.length >= lote) break
   }

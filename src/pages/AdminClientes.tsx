@@ -8,6 +8,7 @@ import { BucketChip, Cargando, ErrorMsg, SegmentoBadge } from "@/components/widg
 import { useClientes, useContexto, useVendedores } from "@/hooks/useData"
 import {
   actualizarCliente,
+  asignarClientesAVendedor,
   crearCliente,
   crearClientesBulk,
   eliminarCliente,
@@ -65,6 +66,11 @@ export function AdminClientes() {
   const [form, setForm] = useState<ClienteInput>(VACIO)
   const [guardando, setGuardando] = useState(false)
   const [errForm, setErrForm] = useState<string | null>(null)
+
+  // Selección para asignar leads a un vendedor.
+  const [sel, setSel] = useState<Set<string>>(new Set())
+  const [asignarVend, setAsignarVend] = useState("")
+  const [asignando, setAsignando] = useState(false)
 
   // Importación CSV
   const [impOpen, setImpOpen] = useState(false)
@@ -198,6 +204,39 @@ export function AdminClientes() {
     { key: "deuda", label: "Con deuda", n: counts.deuda, dot: "#DB3B3B" },
     { key: "todos", label: "Todos", n: CLIENTES.length },
   ]
+
+  // ── Selección + asignación a vendedor ──────────────────────────────────────
+  const idsFiltrados = filtrados.map((c) => c.id)
+  const todosSel = idsFiltrados.length > 0 && idsFiltrados.every((id) => sel.has(id))
+  function toggleTodos() {
+    setSel(todosSel ? new Set() : new Set(idsFiltrados))
+  }
+  function toggleUno(id: string) {
+    setSel((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+  async function asignar() {
+    if (!sel.size || !asignarVend) return
+    setAsignando(true)
+    try {
+      const r = await asignarClientesAVendedor([...sel], asignarVend)
+      const nom = vends.find((v) => v.id === asignarVend)?.nombre.split(" ")[0] ?? "el vendedor"
+      setSel(new Set())
+      reload()
+      toast.ok(
+        `${r.creados} lead${r.creados === 1 ? "" : "s"} cargado${r.creados === 1 ? "" : "s"} a ${nom}.` +
+          (r.duplicados ? ` ${r.duplicados} ya los tenía.` : "") +
+          (r.deOtroVendedor ? ` ${r.deOtroVendedor} ya son de otro vendedor (no se tocaron).` : "")
+      )
+    } catch (err) {
+      toast.error(msgError(err, "No se pudieron asignar"))
+    } finally {
+      setAsignando(false)
+    }
+  }
 
   function abrirNuevo() {
     setEditId(null)
@@ -351,10 +390,46 @@ export function AdminClientes() {
         </div>
       )}
 
+      {sel.size > 0 && (
+        <div className="sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2.5 rounded-xl border border-blue/30 bg-[#EEF3FE] px-3.5 py-2.5 shadow-sm">
+          <span className="text-[13px] font-semibold text-navy">
+            {sel.size} seleccionado{sel.size === 1 ? "" : "s"}
+          </span>
+          <span className="text-[12.5px] text-slate">→ cargar como leads a contactar de:</span>
+          <select
+            value={asignarVend}
+            onChange={(e) => setAsignarVend(e.target.value)}
+            className="rounded-lg border border-input bg-white px-2.5 py-1.5 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+          >
+            <option value="">Elegí un vendedor…</option>
+            {vends.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.nombre}
+              </option>
+            ))}
+          </select>
+          <Button variant="blue" disabled={!asignarVend || asignando} onClick={asignar}>
+            {asignando ? "Asignando…" : `Asignar ${sel.size}`}
+          </Button>
+          <button onClick={() => setSel(new Set())} className="ml-auto text-[12.5px] font-medium text-slate hover:text-ink">
+            Limpiar selección
+          </button>
+        </div>
+      )}
+
       <Card className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
+              <th className="w-9 px-4 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={todosSel}
+                  onChange={toggleTodos}
+                  aria-label="Seleccionar todos los visibles"
+                  title="Seleccionar todos los visibles"
+                />
+              </th>
               <th className="px-4 py-2.5 font-medium">Empresa</th>
               <th className="px-4 py-2.5 font-medium">Segmento</th>
               <th className="px-4 py-2.5 font-medium">Envíos/mes</th>
@@ -367,7 +442,15 @@ export function AdminClientes() {
           </thead>
           <tbody>
             {filtrados.map((c) => (
-              <tr key={c.id} className="border-t border-border hover:bg-mist/60">
+              <tr key={c.id} className={cn("border-t border-border hover:bg-mist/60", sel.has(c.id) && "bg-[#EEF3FE]/60")}>
+                <td className="px-4 py-3 align-top">
+                  <input
+                    type="checkbox"
+                    checked={sel.has(c.id)}
+                    onChange={() => toggleUno(c.id)}
+                    aria-label={`Seleccionar ${c.nombre}`}
+                  />
+                </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2.5">
                     <span className="grid size-7 shrink-0 place-items-center rounded-md border border-border bg-mist text-[11px] font-semibold text-navy">
@@ -448,7 +531,7 @@ export function AdminClientes() {
             ))}
             {filtrados.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-[13px] text-slate">
+                <td colSpan={9} className="px-4 py-8 text-center text-[13px] text-slate">
                   No hay clientes para este filtro.
                 </td>
               </tr>
