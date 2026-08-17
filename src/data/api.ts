@@ -412,7 +412,7 @@ export async function moverOportunidad(
   else if (o.estado === "perdido") patch.perdida_motivo = null
   const { error } = await supabase.from("oportunidades").update(patch).eq("id", o.id)
   if (error) throw new Error(error.message)
-  await sumarSeguimiento().catch(() => {})
+  await sumarSeguimiento(o.vendedor_id).catch(() => {})
 }
 
 // Edita los DATOS DEL PROSPECTO de la oportunidad (no el contacto: eso vive en la
@@ -900,7 +900,7 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
 }
 
 export async function rechazarLead(id: string, motivo: MotivoRechazo, nota?: string | null): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("leads")
     .update({
       estado: "rechazado",
@@ -909,8 +909,10 @@ export async function rechazarLead(id: string, motivo: MotivoRechazo, nota?: str
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
+    .select("vendedor_id")
+    .maybeSingle()
   if (error) throw new Error(error.message)
-  await sumarSeguimiento().catch(() => {})
+  await sumarSeguimiento((data as { vendedor_id?: string } | null)?.vendedor_id).catch(() => {})
 }
 
 // Reasigna leads a otro vendedor. Cada lead queda con un único dueño. Si el
@@ -942,17 +944,21 @@ export async function asignarLeads(
 }
 
 // ─────────────────── Racha de seguimientos (gamification) ────────────────────
-// Suma 1 al día de hoy del vendedor que llama (RPC sin params, deriva el
-// vendedor del token). Best-effort: nunca rompe la acción principal, pero ya NO
-// falla en silencio: si la RPC no existe (falta correr seguimiento-diario.sql) o
-// el vendedor no está linkeado, deja un warning en consola para poder detectarlo.
-export async function sumarSeguimiento(): Promise<void> {
-  const { error } = await supabase.rpc("sumar_seguimiento")
+// Suma 1 al día de hoy. La racha sigue al vendedor DUEÑO de la acción (el mismo
+// que recibe el lead/oportunidad), no al del token: así, cuando el admin trabaja
+// "como" un vendedor desde Vista Vendedor, la racha se acredita a ESE vendedor y
+// no al admin. Si se pasa `vendedorId` usa la RPC admin-gated (el admin puede
+// acreditar a cualquiera; un vendedor solo a sí mismo); si no, cae en la que
+// deriva del token. Best-effort: no rompe la acción, pero avisa en consola.
+export async function sumarSeguimiento(vendedorId?: string): Promise<void> {
+  const { error } = vendedorId
+    ? await supabase.rpc("sumar_seguimiento_para", { v: vendedorId })
+    : await supabase.rpc("sumar_seguimiento")
   if (error) {
     console.warn(
       "[seguimiento] no se pudo registrar la racha:",
       error.message,
-      "— revisá que esté corrido supabase/seguimiento-diario.sql y que tu usuario esté linkeado a un vendedor."
+      "— revisá que estén corridos seguimiento-diario.sql y seguimiento-por-vendedor.sql, y que el usuario esté linkeado a un vendedor."
     )
   }
 }
@@ -982,12 +988,14 @@ export async function fetchSeguimientoDiario(vendedorId: string): Promise<DiaSeg
 // oportunidad o rechazarlo. Devuelve la cantidad de intentos ya registrados.
 export async function marcarContactado(id: string, intentosActuales: number): Promise<number> {
   const n = (intentosActuales ?? 0) + 1
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("leads")
     .update({ contactos_intentos: n, ultimo_contacto_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", id)
+    .select("vendedor_id")
+    .maybeSingle()
   if (error) throw new Error(error.message)
-  await sumarSeguimiento().catch(() => {})
+  await sumarSeguimiento((data as { vendedor_id?: string } | null)?.vendedor_id).catch(() => {})
   return n
 }
 
@@ -1093,7 +1101,7 @@ export async function convertirLead(
       .from("oportunidad_eventos")
       .insert({ oportunidad_id: opId, titulo: "Nota al pasar a oportunidad", detalle: nota.trim() })
   }
-  await sumarSeguimiento().catch(() => {})
+  await sumarSeguimiento(i.vendedor_id).catch(() => {})
   return opId
 }
 
@@ -1432,7 +1440,7 @@ export async function inscribir(p: {
     proximo_envio_at: proximo,
   })
   if (error) throw new Error(error.message)
-  await sumarSeguimiento().catch(() => {})
+  await sumarSeguimiento(p.vendedor_id).catch(() => {})
 }
 
 export async function actualizarInscripcion(
