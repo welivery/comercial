@@ -943,9 +943,18 @@ export async function asignarLeads(
 
 // ─────────────────── Racha de seguimientos (gamification) ────────────────────
 // Suma 1 al día de hoy del vendedor que llama (RPC sin params, deriva el
-// vendedor del token). Best-effort: nunca rompe la acción principal.
+// vendedor del token). Best-effort: nunca rompe la acción principal, pero ya NO
+// falla en silencio: si la RPC no existe (falta correr seguimiento-diario.sql) o
+// el vendedor no está linkeado, deja un warning en consola para poder detectarlo.
 export async function sumarSeguimiento(): Promise<void> {
-  await supabase.rpc("sumar_seguimiento")
+  const { error } = await supabase.rpc("sumar_seguimiento")
+  if (error) {
+    console.warn(
+      "[seguimiento] no se pudo registrar la racha:",
+      error.message,
+      "— revisá que esté corrido supabase/seguimiento-diario.sql y que tu usuario esté linkeado a un vendedor."
+    )
+  }
 }
 export interface DiaSeguimiento {
   fecha: string
