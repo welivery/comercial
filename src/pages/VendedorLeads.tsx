@@ -159,6 +159,19 @@ export function VendedorLeads() {
   const [periodo, setPeriodo] = useState("todo")
   const [secFiltro, setSecFiltro] = useState<"todos" | "en_sec" | "sin_sec">("todos")
   const [contFiltro, setContFiltro] = useState<"todos" | "contactados" | "sin_contactar">("todos")
+  const [campFiltro, setCampFiltro] = useState<string>("todas") // "todas" | "sin" | nombre de campaña
+  // Orden por columna (al tocar el título). null = orden por defecto (prioridad + reciente).
+  const [sortCol, setSortCol] = useState<null | "empresa" | "email" | "telefono" | "origen">(null)
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  function ordenarPor(col: "empresa" | "email" | "telefono" | "origen") {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+    else {
+      setSortCol(col)
+      setSortDir("asc")
+    }
+  }
+  const flecha = (col: "empresa" | "email" | "telefono" | "origen") =>
+    sortCol === col ? (sortDir === "asc" ? " ↑" : " ↓") : ""
 
   // Un lead está "en secuencia" si tiene una inscripción viva (no terminada/rebotada).
   const enSecuencia = (id: string) => {
@@ -170,7 +183,7 @@ export function VendedorLeads() {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [asignarA, setAsignarA] = useState("")
   const [asignando, setAsignando] = useState(false)
-  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro, contFiltro])
+  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro, contFiltro, campFiltro])
 
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
@@ -217,7 +230,7 @@ export function VendedorLeads() {
     const nuevos = enRango.filter((l) => l.estado === "nuevo").length
     const conv = enRango.filter((l) => l.estado === "convertido").length
     const rech = enRango.filter((l) => l.estado === "rechazado").length
-    const lista = enRango
+    const filtrada = enRango
       .filter((l) => estadoFiltro === "todos" || l.estado === estadoFiltro)
       .filter((l) => secFiltro === "todos" || (secFiltro === "en_sec" ? enSecuencia(l.id) : !enSecuencia(l.id)))
       .filter(
@@ -225,17 +238,37 @@ export function VendedorLeads() {
           contFiltro === "todos" ||
           (contFiltro === "contactados" ? l.contactos_intentos > 0 : l.contactos_intentos === 0)
       )
-      // Prioridad de campaña primero; dentro, lo más nuevo arriba.
-      .sort(
-        (a, b) =>
-          Number(b.prioridad) - Number(a.prioridad) ||
-          (b.created_at || "").localeCompare(a.created_at || "")
-      )
+      .filter((l) => campFiltro === "todas" || (campFiltro === "sin" ? !l.campania : l.campania === campFiltro))
+    // Valor por columna para ordenar al tocar el título.
+    const val = (l: Lead): string => {
+      if (sortCol === "email") return (emailDe(l) ?? "").toLowerCase()
+      if (sortCol === "telefono") return telDe(l) ?? ""
+      if (sortCol === "origen") return (l.campania ?? l.fuentes[0]?.detalle ?? l.origen ?? "").toLowerCase()
+      return l.nombre.toLowerCase() // empresa
+    }
+    const lista = sortCol
+      ? [...filtrada].sort((a, b) => {
+          const r = val(a).localeCompare(val(b), "es", { numeric: true })
+          return sortDir === "asc" ? r : -r
+        })
+      : // Orden por defecto: prioridad de campaña primero; dentro, lo más nuevo arriba.
+        [...filtrada].sort(
+          (a, b) =>
+            Number(b.prioridad) - Number(a.prioridad) ||
+            (b.created_at || "").localeCompare(a.created_at || "")
+        )
     return {
       kpi: { traidos: enRango.length, nuevos, conv, rech, pct: enRango.length ? Math.round((conv / enRango.length) * 100) : 0 },
       visibles: lista,
     }
-  }, [leads, periodo, estadoFiltro, secFiltro, contFiltro, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [leads, periodo, estadoFiltro, secFiltro, contFiltro, campFiltro, sortCol, sortDir, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Campañas presentes en los leads (para el filtro de campaña).
+  const campaniasDisp = useMemo(
+    () => [...new Set(leads.map((l) => l.campania).filter(Boolean) as string[])].sort(),
+    [leads]
+  )
+  const hayCampania = campaniasDisp.length > 0
 
   // Solo los "nuevo" son seleccionables (son los que se pueden inscribir).
   const seleccionables = useMemo(() => visibles.filter((l) => l.estado === "nuevo"), [visibles])
@@ -746,6 +779,24 @@ export function VendedorLeads() {
               <option value="en_sec">En secuencia</option>
               <option value="sin_sec">Sin secuencia</option>
             </select>
+            {hayCampania && (
+              <select
+                value={campFiltro}
+                onChange={(ev) => setCampFiltro(ev.target.value)}
+                className={cn(
+                  "rounded-lg border px-3 py-2 text-[12.5px] font-medium outline-none focus:border-blue",
+                  campFiltro !== "todas" ? "border-coral/40 bg-[#FDE7E2] text-[#8a3a2a]" : "border-input bg-white text-ink"
+                )}
+              >
+                <option value="todas">Campaña: todas</option>
+                {campaniasDisp.map((c) => (
+                  <option key={c} value={c}>
+                    ⚡ {c}
+                  </option>
+                ))}
+                <option value="sin">Sin campaña</option>
+              </select>
+            )}
             <select
               value={periodo}
               onChange={(ev) => setPeriodo(ev.target.value)}
@@ -818,10 +869,26 @@ export function VendedorLeads() {
                         <input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Seleccionar todos" />
                       )}
                     </th>
-                    <th className="px-2 py-2.5 font-medium">Empresa</th>
-                    <th className="px-4 py-2.5 font-medium">Email</th>
-                    <th className="px-4 py-2.5 font-medium">Teléfono</th>
-                    <th className="px-4 py-2.5 font-medium">Origen</th>
+                    <th className="px-2 py-2.5 font-medium">
+                      <button onClick={() => ordenarPor("empresa")} className={cn("inline-flex items-center uppercase tracking-wide hover:text-ink", sortCol === "empresa" && "text-ink")} title="Ordenar por empresa">
+                        Empresa{flecha("empresa")}
+                      </button>
+                    </th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <button onClick={() => ordenarPor("email")} className={cn("inline-flex items-center uppercase tracking-wide hover:text-ink", sortCol === "email" && "text-ink")} title="Ordenar por email">
+                        Email{flecha("email")}
+                      </button>
+                    </th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <button onClick={() => ordenarPor("telefono")} className={cn("inline-flex items-center uppercase tracking-wide hover:text-ink", sortCol === "telefono" && "text-ink")} title="Ordenar por teléfono">
+                        Teléfono{flecha("telefono")}
+                      </button>
+                    </th>
+                    <th className="px-4 py-2.5 font-medium">
+                      <button onClick={() => ordenarPor("origen")} className={cn("inline-flex items-center uppercase tracking-wide hover:text-ink", sortCol === "origen" && "text-ink")} title="Ordenar por origen/campaña">
+                        Origen{flecha("origen")}
+                      </button>
+                    </th>
                     <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
                   </tr>
                 </thead>
