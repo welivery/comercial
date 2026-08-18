@@ -936,6 +936,17 @@ export function VendedorLeads() {
                             <a href={`mailto:${email}`} className="inline-flex items-center gap-1.5 text-blue hover:underline">
                               <Mail size={13} className="shrink-0" /> {email}
                             </a>
+                          ) : l.web ? (
+                            // Sin email: ofrecemos el sitio para buscar el contacto ahí.
+                            <a
+                              href={l.web.startsWith("http") ? l.web : `https://${l.web}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Sin email cargado — abrí el sitio para buscar el contacto"
+                              className="inline-flex items-center gap-1.5 text-slate hover:text-blue hover:underline"
+                            >
+                              <ExternalLink size={12} className="shrink-0" /> buscar en su sitio
+                            </a>
                           ) : (
                             <span className="text-muted">—</span>
                           )}
