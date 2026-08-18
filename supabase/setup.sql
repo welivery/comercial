@@ -138,28 +138,64 @@ create index idx_clientes_seg   on clientes(segmento);
 create index idx_evt_op         on oportunidad_eventos(oportunidad_id, created_at);
 
 -- ─────────── Trigger: enganchar vendedor al registrarse (por email) ───────────
--- Si existe un vendedor con ese email sin cuenta, lo linkea. Si no, crea uno
--- nuevo con rol 'vendedor'. El admin se define con un UPDATE tras registrarse.
+-- Engancha el login a una ficha pre-cargada SOLO si el email está confirmado
+-- (anti-hijack A2). Corre al crear el usuario y también al confirmar el mail.
 create or replace function link_vendedor_on_signup()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
+  if new.email_confirmed_at is null then
+    return new;
+  end if;
   update public.vendedores
      set user_id = new.id
    where lower(email) = lower(new.email) and user_id is null;
   if not found then
     insert into public.vendedores (user_id, email, nombre, rol)
-    values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nombre', ''), 'vendedor');
+    values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nombre', ''), 'vendedor')
+    on conflict do nothing;
   end if;
   return new;
 end;
 $$;
 
+drop trigger if exists on_auth_user_created_ventas on auth.users;
 create trigger on_auth_user_created_ventas
   after insert on auth.users
   for each row execute function link_vendedor_on_signup();
+
+drop trigger if exists on_auth_user_confirmed_ventas on auth.users;
+create trigger on_auth_user_confirmed_ventas
+  after update of email_confirmed_at on auth.users
+  for each row
+  when (old.email_confirmed_at is null and new.email_confirmed_at is not null)
+  execute function link_vendedor_on_signup();
+
+-- ─────────── C1 · Un vendedor NO puede auto-escalar su rol ───────────
+create or replace function vendedores_no_selfescalate()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  if not public.is_admin_ventas() then
+    if new.rol     is distinct from old.rol
+    or new.user_id is distinct from old.user_id
+    or new.email   is distinct from old.email
+    or new.activo  is distinct from old.activo then
+      raise exception 'No autorizado a cambiar rol/user_id/email/activo';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_vend_no_selfescalate on vendedores;
+create trigger trg_vend_no_selfescalate
+  before update on vendedores
+  for each row execute function vendedores_no_selfescalate();
 
 -- ============ 2) RLS ============
 -- Welivery Comercial — Row Level Security.
