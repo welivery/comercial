@@ -877,11 +877,30 @@ export async function asignarClientesAVendedor(
 
 // Tamaño del "cupo" diario: cuántos leads de la base trae cada vez.
 export const LOTE_LEADS_BASE = 20
+// Umbral de "alto volumen": una empresa con más de esto en envíos/mes se prioriza
+// en la siembra (además de las de campaña). Configurable.
+export const ENVIOS_PRIORITARIO = 500
+
+// Peso para ORDENAR qué leads se siembran primero. Prioridades (de mayor a menor):
+//  1) que tengan DATOS de contacto (email o teléfono) — son los contactables;
+//  2) leads de campaña; 3) alto volumen (> ENVIOS_PRIORITARIO); luego score/volumen.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function pesoSiembra(c: any): number {
+  const tieneDato = !!(c.email || c.telefono)
+  return (
+    (tieneDato ? 4000 : 0) +
+    (c.prioridad ? 1000 : 0) +
+    ((c.envios_mes ?? 0) > ENVIOS_PRIORITARIO ? 800 : 0) +
+    (c.prioridad_score ?? 0) +
+    Math.min(c.envios_mes ?? 0, 100000) / 1000
+  )
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Trae el próximo lote (~20) de leads desde la base: ex-clientes (reconquista) y
-// prospectos, propios del vendedor o SIN asignar, priorizando los de mayor
-// volumen. No repite los que ya trajo. Costo cero (no usa IA). Devuelve cuántos
-// se agregaron.
+// prospectos, propios del vendedor o SIN asignar. Prioriza los que tienen datos
+// de contacto, los de campaña y los de alto volumen. No repite los que ya trajo.
+// Costo cero (no usa IA). Devuelve cuántos se agregaron.
 export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BASE): Promise<number> {
   if (!vendedorId) return 0
   const [baseRes, leadsRes] = await Promise.all([
@@ -891,10 +910,12 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
       .in("segmento", ["ex_cliente", "prospeccion"])
       .eq("deuda", false) // los deudores no se prospectan automáticamente
       .or(`vendedor_id.eq.${vendedorId},vendedor_id.is.null`)
-      // Prioridad de campaña primero (mejor score antes); luego, por volumen.
+      // Traemos con email/campaña/volumen arriba para que entren en la ventana de
+      // 1000; el orden fino (con-datos primero) lo hace pesoSiembra abajo.
+      .order("email", { ascending: false, nullsFirst: false })
       .order("prioridad", { ascending: false })
-      .order("prioridad_score", { ascending: false })
-      .order("envios_mes", { ascending: false }),
+      .order("envios_mes", { ascending: false })
+      .order("prioridad_score", { ascending: false }),
     supabase.from("leads").select("clave").eq("vendedor_id", vendedorId),
   ])
   if (baseRes.error) throw new Error(baseRes.error.message)
@@ -903,7 +924,9 @@ export async function sembrarLeadsBase(vendedorId: string, lote = LOTE_LEADS_BAS
   const vistos = new Set<string>()
   const elegidos: { id: string; sinAsignar: boolean; fila: Record<string, unknown> }[] = []
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  for (const c of (baseRes.data ?? []) as any[]) {
+  // Orden final: con datos de contacto primero, luego campaña / alto volumen.
+  const candidatos = [...((baseRes.data ?? []) as any[])].sort((a, b) => pesoSiembra(b) - pesoSiembra(a))
+  for (const c of candidatos) {
     const clave = claveLead(c.nombre)
     if (yaHay.has(clave) || vistos.has(clave)) continue
     vistos.add(clave)
