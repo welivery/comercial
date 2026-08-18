@@ -24,7 +24,7 @@ export function PageHead({
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue">
-          Welivery Ventas · Chile
+          Welivery Comercial · Chile
         </div>
         <h1 className="text-xl font-semibold leading-tight text-navy">{titulo}</h1>
         {descripcion && <p className="mt-1 text-[13px] text-slate">{descripcion}</p>}

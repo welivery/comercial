@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
-import { BucketChip, Cargando, VAvatar } from "@/components/widgets"
+import { BucketChip, Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useOportunidades, useSecuencias, useSeguimientoDiario } from "@/hooks/useData"
@@ -105,7 +105,7 @@ export function VendedorSeguimiento() {
   const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId, sinPerfil } = useVentas()
   const navigate = useNavigate()
   const toast = useToast()
-  const { data: leadsData, loading, reload } = useLeads(vendedor.id)
+  const { data: leadsData, loading, error, reload } = useLeads(vendedor.id)
   const { data: inscData, reload: reloadInsc } = useInscripciones(vendedor.id)
   const { data: opsData } = useOportunidades(vendedor.id)
   const { data: secuenciasData } = useSecuencias(vendedor.id)
@@ -342,6 +342,9 @@ export function VendedorSeguimiento() {
 
       {loading ? (
         <Cargando que="tu seguimiento" />
+      ) : error ? (
+        // Sin esto, un fallo de carga mostraba "¡Bandeja en cero!" (falso al día).
+        <ErrorMsg msg={error} />
       ) : (
         <>
           <GameBar racha={racha} hoy={hoyHechos} meta={META_DIARIA} salud={salud} cartera={cartera} />

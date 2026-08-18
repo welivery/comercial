@@ -19,7 +19,7 @@ import { useToast } from "@/components/Toast"
 import { msgError } from "@/lib/errors"
 import { CSV_PLANTILLA, parseClientesCsv, parseDeudoresCsv, type DeudorRow, type ParseResult } from "@/lib/csv"
 import { segmentosActivos, useSegmentos } from "@/lib/buckets"
-import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, iniciales } from "@/lib/display"
+import { MOTIVO_BAJA_LABEL, SEGMENTO_LABEL, fmtEnvios, fmtFecha, iniciales } from "@/lib/display"
 import { cn } from "@/lib/utils"
 import type { Cliente, MotivoBaja, SegmentoCliente } from "@/lib/types"
 
@@ -340,7 +340,7 @@ export function AdminClientes() {
             <Sparkles size={14} className="text-mint" /> Contexto IA
           </div>
           <div className="mt-2 text-[16px] font-semibold leading-none text-success">Actualizado</div>
-          <div className="mt-1.5 text-[11.5px] text-slate">{contexto?.actualizado_at ?? "—"}</div>
+          <div className="mt-1.5 text-[11.5px] text-slate">{fmtFecha(contexto?.actualizado_at)}</div>
         </Card>
       </div>
 

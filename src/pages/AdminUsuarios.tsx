@@ -93,8 +93,12 @@ export function AdminUsuarios() {
   }
 
   async function toggleActivo(u: VendedorRow) {
-    await actualizarUsuario(u.id, { activo: !u.activo })
-    reload()
+    try {
+      await actualizarUsuario(u.id, { activo: !u.activo })
+      reload()
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo cambiar el estado"))
+    }
   }
 
   async function borrar(u: VendedorRow) {

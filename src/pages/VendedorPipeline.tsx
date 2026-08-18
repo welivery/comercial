@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { ListFilter, MapPin, Package, Plus } from "lucide-react"
+import { MapPin, Package, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { Modal } from "@/components/Modal"
@@ -164,9 +164,6 @@ export function VendedorPipeline() {
   return (
     <>
       <PageHead titulo="Mis oportunidades" descripcion={`${activas} activas · arrastrá las tarjetas entre columnas`}>
-        <Button variant="outline">
-          <ListFilter /> Filtros
-        </Button>
         <Button variant="blue" onClick={() => { setForm(VACIO); setErrForm(null); setAbierto(true) }}>
           <Plus /> Nueva oportunidad
         </Button>

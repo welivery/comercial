@@ -136,6 +136,24 @@ export function diasEntre(desdeIso: string, hasta: Date = HOY): number {
   return Math.max(0, Math.round((hasta.getTime() - new Date(desdeIso).getTime()) / MS_DIA))
 }
 
+// Fecha legible es-CL (para no mostrar ISO crudo al usuario).
+export function fmtFecha(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  return new Date(iso).toLocaleDateString("es-CL", { timeZone: TZ_CHILE, day: "2-digit", month: "short", year: "numeric" })
+}
+// Fecha + hora legible es-CL.
+export function fmtFechaHora(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  return new Date(iso).toLocaleString("es-CL", {
+    timeZone: TZ_CHILE,
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 // "hace 2 días" / "hoy" / "ayer" — relativo a HOY.
 export function haceTexto(iso: string): string {
   const d = diasEntre(iso)

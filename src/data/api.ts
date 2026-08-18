@@ -1580,6 +1580,23 @@ export async function guardarConfigSecuencias(c: ConfigSecuencias): Promise<void
 }
 
 // Ensambla el contexto IA de sus 4 tablas.
+// Guarda el contexto general del negocio + el estado de las fuentes. Antes la
+// pantalla no persistía nada (el "Guardar" solo cerraba el editor y se perdía lo
+// escrito). RLS: solo admin (policy "ctx/fuentes: admin edita").
+export async function guardarContexto(
+  general: string,
+  fuentes: { key: string; activa: boolean }[]
+): Promise<void> {
+  const { error } = await supabase
+    .from("contexto_ia")
+    .upsert({ id: 1, general, updated_at: new Date().toISOString() })
+  if (error) throw new Error(error.message)
+  for (const f of fuentes) {
+    const { error: e } = await supabase.from("fuentes_ia").update({ activa: f.activa }).eq("key", f.key)
+    if (e) throw new Error(e.message)
+  }
+}
+
 export async function fetchContexto(): Promise<ContextoIA> {
   const [gen, fuentes, reglas, porVend] = await Promise.all([
     supabase.from("contexto_ia").select("*").eq("id", 1).maybeSingle(),

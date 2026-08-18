@@ -15,6 +15,8 @@ import {
   useVendedores,
 } from "@/hooks/useData"
 import { actualizarUsuario } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { PERIODO_ACTUAL } from "@/lib/display"
 
 // Ficha consolidada de un vendedor (vista admin): datos, estado del email de
@@ -27,6 +29,7 @@ export function VendedorFicha() {
   const { data: insc } = useInscripciones(id)
   const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
   const { data: cuenta, loading: loadingCuenta } = useEmailCuenta(id)
+  const toast = useToast()
 
   const v = (vendedores ?? []).find((x) => x.id === id) ?? null
   const [guardando, setGuardando] = useState(false)
@@ -64,6 +67,8 @@ export function VendedorFicha() {
     try {
       await actualizarUsuario(v.id, { activo: !v.activo })
       reload()
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo cambiar el estado"))
     } finally {
       setGuardando(false)
     }

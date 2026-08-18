@@ -5,16 +5,35 @@ import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { Cargando, ErrorMsg, SectionTitle, VAvatar } from "@/components/widgets"
 import { useContexto, useVendedores } from "@/hooks/useData"
+import { guardarContexto } from "@/data/api"
+import { useToast } from "@/components/Toast"
+import { msgError } from "@/lib/errors"
 import { cn } from "@/lib/utils"
 import type { FuenteIA } from "@/lib/types"
 
 export function AdminContexto() {
-  const { data: contexto, loading, error } = useContexto()
+  const { data: contexto, loading, error, reload } = useContexto()
   const { data: vendedores } = useVendedores()
+  const toast = useToast()
   const vends = vendedores ?? []
   const [general, setGeneral] = useState("")
   const [editando, setEditando] = useState(false)
+  const [guardando, setGuardando] = useState(false)
   const [fuentes, setFuentes] = useState<FuenteIA[]>([])
+
+  async function guardar() {
+    setGuardando(true)
+    try {
+      await guardarContexto(general, fuentes)
+      setEditando(false)
+      reload()
+      toast.ok("Contexto guardado.")
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo guardar el contexto"))
+    } finally {
+      setGuardando(false)
+    }
+  }
 
   useEffect(() => {
     if (contexto) {
@@ -62,10 +81,12 @@ export function AdminContexto() {
             </div>
           )}
           <div className="mt-3.5 flex gap-2">
-            <Button variant="blue" onClick={() => setEditando(false)}>
-              <Check /> Guardar contexto
-            </Button>
-            <Button variant="outline" onClick={() => setEditando((e) => !e)}>
+            {editando && (
+              <Button variant="blue" onClick={guardar} disabled={guardando}>
+                <Check /> {guardando ? "Guardando…" : "Guardar contexto"}
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setEditando((e) => !e)} disabled={guardando}>
               <Pencil /> {editando ? "Cancelar" : "Editar"}
             </Button>
           </div>

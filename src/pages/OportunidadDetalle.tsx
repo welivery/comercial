@@ -21,6 +21,7 @@ import {
   ESTADO_LABEL,
   diasEntre,
   fmtEnvios,
+  fmtFechaHora,
   haceTexto,
 } from "@/lib/display"
 import { cn } from "@/lib/utils"
@@ -175,7 +176,7 @@ export function OportunidadDetalle() {
         "—"
       ),
     ],
-    ["Declarada", `${haceTexto(o.declarada_at)} · ${o.declarada_at}`],
+    ["Declarada", `${haceTexto(o.declarada_at)} · ${fmtFechaHora(o.declarada_at)}`],
   ]
 
   return (
@@ -313,7 +314,7 @@ export function OportunidadDetalle() {
                 <div>
                   <h5 className="text-[12.5px] font-semibold text-ink">{e.titulo}</h5>
                   {e.detalle && <p className="mt-0.5 text-[12px] leading-snug text-slate">{e.detalle}</p>}
-                  <time className="text-[11px] text-muted">{haceTexto(e.at)} · {e.at}</time>
+                  <time className="text-[11px] text-muted">{haceTexto(e.at)} · {fmtFechaHora(e.at)}</time>
                 </div>
               </div>
             ))}

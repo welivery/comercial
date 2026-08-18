@@ -120,6 +120,15 @@
 .dark .bg-mist\/40 { background-color: rgba(26, 44, 77, 0.5); }
 .dark .bg-mist\/50 { background-color: rgba(26, 44, 77, 0.6); }
 
+/* Inputs de formulario (.inp/.ipt): las páginas los definen con background:#fff
+   inline, que en modo oscuro quedaba blanco sobre navy. `.dark .inp` (más
+   específico) gana sin tener que tocar cada página. También un anillo de foco
+   visible y consistente con los botones. */
+.inp:focus, .ipt:focus { box-shadow: 0 0 0 3px rgba(47, 91, 230, 0.18); }
+.dark .inp, .dark .ipt { background-color: #16294a !important; color: #ffffff; border-color: #2b426b; }
+.dark .inp::placeholder, .dark .ipt::placeholder { color: #7c88a0; }
+.dark .inp:focus, .dark .ipt:focus { border-color: var(--color-blue); }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
