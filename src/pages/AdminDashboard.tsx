@@ -14,6 +14,7 @@ import {
   useVendedores,
 } from "@/hooks/useData"
 import type { LeadActividad, LeadsVendedorKpi, VendedorRow } from "@/data/api"
+import type { Objetivo } from "@/lib/types"
 import { useVentas } from "@/store"
 import { avanceEquipo, avanceVendedor, embudo } from "@/lib/metrics"
 import { segmentosActivos, useSegmentos } from "@/lib/buckets"
@@ -205,6 +206,8 @@ export function AdminDashboard() {
 
       <LeadsPorVendedor vendedores={vends} kpis={leadsVend ?? []} onVer={verLeadsDe} />
 
+      <RitmoDiario vendedores={vends} actividad={actividadLeads ?? []} objetivos={objs} onVer={verLeadsDe} />
+
       <ActividadLeads vendedores={vends} actividad={actividadLeads ?? []} />
 
       <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
@@ -366,6 +369,131 @@ const MODOS: { k: ModoAct; label: string; rango: string }[] = [
   { k: "semana", label: "Semana", rango: "últimas 8 semanas" },
   { k: "mes", label: "Mes", rango: "últimos 6 meses" },
 ]
+
+// ─────────────────── Ritmo diario por vendedor (contactos/día vs cuota) ───────────────────
+// Muestra, por vendedor, cuántos leads contactó HOY y en los últimos 7 días, y si
+// llega o no a su CUOTA DIARIA (leads_cupo_diario del objetivo). Ordena a los que
+// están más atrás arriba, para saber a quién empujar hoy.
+function RitmoDiario({
+  vendedores,
+  actividad,
+  objetivos,
+  onVer,
+}: {
+  vendedores: VendedorRow[]
+  actividad: LeadActividad[]
+  objetivos: Objetivo[]
+  onVer: (vendedorId: string) => void
+}) {
+  const now = new Date()
+  const dias = Array.from({ length: 7 }, (_, k) => {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - k))
+    const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+    return { d, next, label: `${d.getDate()}/${d.getMonth() + 1}` }
+  })
+  const contactos = useMemo(
+    () =>
+      actividad
+        .filter((a) => a.contactado_at)
+        .map((a) => ({ v: a.vendedor_id, d: new Date(a.contactado_at as string) })),
+    [actividad]
+  )
+  const filas = useMemo(
+    () =>
+      vendedores
+        .map((v) => {
+          const cupo = objetivos.find((o) => o.vendedor_id === v.id)?.leads_cupo_diario ?? 10
+          const serie = dias.map((dd) => contactos.filter((c) => c.v === v.id && c.d >= dd.d && c.d < dd.next).length)
+          const hoy = serie[serie.length - 1]
+          return { v, cupo, serie, hoy, falta: Math.max(0, cupo - hoy), alDia: hoy >= cupo }
+        })
+        .sort((a, b) => Number(a.alDia) - Number(b.alDia) || b.falta - a.falta),
+    [vendedores, objetivos, contactos] // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const hoyEquipo = filas.reduce((s, f) => s + f.hoy, 0)
+  const metaEquipo = filas.reduce((s, f) => s + f.cupo, 0)
+  const maxSerie = Math.max(1, ...filas.flatMap((f) => f.serie))
+  const alDiaN = filas.filter((f) => f.alDia).length
+
+  return (
+    <Card className="mt-4 p-[18px]">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="grid size-8 place-items-center rounded-lg bg-[#EEF3FE]">
+          <TrendingUp size={16} className="text-blue" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[15px] font-semibold text-navy">Ritmo diario · ¿llegan a su cuota?</h2>
+          <p className="text-xs text-slate">
+            Leads contactados por día vs. la cuota diaria de cada vendedor · últimos 7 días
+          </p>
+        </div>
+        <div className="rounded-lg bg-mist/60 px-3 py-1.5 text-right">
+          <div className="text-[11px] text-slate">Hoy · equipo</div>
+          <div className="text-[15px] font-semibold text-navy tabular-nums">
+            {hoyEquipo}
+            <span className="text-[12px] font-medium text-slate">/{metaEquipo}</span>
+          </div>
+        </div>
+      </div>
+
+      {filas.length > 0 && (
+        <div className="mt-2 text-[12px] text-slate">
+          <b className={cn("font-semibold", alDiaN === filas.length ? "text-success" : "text-coral")}>
+            {alDiaN}/{filas.length}
+          </b>{" "}
+          vendedores llegaron a su cuota de hoy.
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-col divide-y divide-border">
+        {filas.map(({ v, cupo, serie, hoy, falta, alDia }) => (
+          <div key={v.id} className="flex items-center gap-3 py-2.5">
+            <VAvatar iniciales={v.iniciales} />
+            <span className="min-w-0 flex-[1.2] truncate text-[13px] font-medium text-ink">{v.nombre}</span>
+
+            {/* Sparkline 7 días (hoy resaltado) */}
+            <div className="flex items-end gap-[3px]" style={{ height: 30 }} title="Contactos por día (últimos 7)">
+              {serie.map((n, i) => {
+                const hoyBar = i === serie.length - 1
+                return (
+                  <div
+                    key={i}
+                    title={`${dias[i].label}: ${n}`}
+                    className="w-[7px] rounded-t"
+                    style={{
+                      height: `${Math.max(8, (n / maxSerie) * 100)}%`,
+                      background: hoyBar ? (alDia ? "#1E9E6A" : "#F2563A") : n ? "#9DB4F0" : "#EEF1F6",
+                    }}
+                  />
+                )
+              })}
+            </div>
+
+            {/* Hoy vs cuota */}
+            <div className="w-[112px] text-right">
+              <div className="text-[13px] font-semibold tabular-nums text-ink">
+                {hoy}
+                <span className="text-[12px] font-medium text-slate">/{cupo} hoy</span>
+              </div>
+              {alDia ? (
+                <div className="text-[11px] font-semibold text-success">✓ al día</div>
+              ) : (
+                <div className="text-[11px] font-semibold text-coral">faltan {falta}</div>
+              )}
+            </div>
+
+            <button
+              onClick={() => onVer(v.id)}
+              className="shrink-0 rounded-md px-2 py-1 text-[12px] font-medium text-blue hover:bg-[#EEF3FE]"
+            >
+              Ver leads
+            </button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
 
 function ActividadLeads({ vendedores, actividad }: { vendedores: VendedorRow[]; actividad: LeadActividad[] }) {
   const [modo, setModo] = useState<ModoAct>("dia")

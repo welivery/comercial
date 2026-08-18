@@ -7,9 +7,10 @@ import { PageHead, MonthPill } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
 import { Cargando, ErrorMsg, Progress } from "@/components/widgets"
 import { useVentas } from "@/store"
-import { useLeads, useObjetivos, useOportunidades } from "@/hooks/useData"
+import { useLeads, useObjetivos, useOportunidades, useSeguimientoDiario } from "@/hooks/useData"
 import { avanceVendedor } from "@/lib/metrics"
 import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
+import { cn } from "@/lib/utils"
 import { HOY, PERIODO_ACTUAL, enPeriodo, tuvoReunionEfectiva } from "@/lib/display"
 import type { Segmento } from "@/lib/types"
 
@@ -47,6 +48,14 @@ export function VendedorAvance() {
 
   const leadsNuevos = (leadsData ?? []).filter((l) => l.estado === "nuevo").length
   const leadsTrabajados = (leadsData ?? []).filter((l) => l.estado !== "nuevo").length
+
+  // Cuota diaria de contactos (leads_cupo_diario del objetivo) y lo hecho HOY.
+  const { data: diario } = useSeguimientoDiario(vendedor.id)
+  const cupo = (objetivos ?? []).find((o) => o.vendedor_id === vendedor.id)?.leads_cupo_diario ?? 10
+  const hoyStr = `${HOY.getFullYear()}-${String(HOY.getMonth() + 1).padStart(2, "0")}-${String(HOY.getDate()).padStart(2, "0")}`
+  const contactadosHoy = (diario ?? []).find((d) => d.fecha === hoyStr)?.hechos ?? 0
+  const faltanHoy = Math.max(0, cupo - contactadosHoy)
+  const cuotaCumplida = contactadosHoy >= cupo
 
   // Fechas del mes.
   const diasEnMes = new Date(HOY.getFullYear(), HOY.getMonth() + 1, 0).getDate()
@@ -171,6 +180,51 @@ export function VendedorAvance() {
           track={{ value: Math.min(100, av.enPipeline * 6) }}
         />
       </div>
+
+      {/* Cuota diaria de contactos — resaltada si va atrás */}
+      <Card
+        className={cn(
+          "mt-4 flex flex-col gap-4 border-l-4 p-[18px] sm:flex-row sm:items-center",
+          cuotaCumplida ? "border-l-success bg-[#F0FAF5]" : "border-l-coral bg-[#FEF4F1]"
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <span
+            className="grid size-11 shrink-0 place-items-center rounded-xl"
+            style={{ background: (cuotaCumplida ? "#1E9E6A" : "#F2563A") + "1F" }}
+          >
+            <Target size={20} style={{ color: cuotaCumplida ? "#1E9E6A" : "#F2563A" }} />
+          </span>
+          <div>
+            <div className="text-[26px] font-semibold leading-none tabular-nums text-navy">
+              {contactadosHoy}
+              <span className="text-[15px] font-medium text-slate">/{cupo}</span>
+            </div>
+            <div className="mt-1 text-[12px] font-medium text-slate">tu cuota de contactos de hoy</div>
+          </div>
+        </div>
+        <div className="hidden h-10 w-px bg-border sm:block" />
+        <div className="min-w-0 flex-1">
+          {cuotaCumplida ? (
+            <p className="text-[13px] font-semibold text-success">¡Cumpliste tu cuota de hoy! 🔥 Seguí sumando.</p>
+          ) : (
+            <p className="text-[13px] font-semibold text-[#a5341f]">
+              Te faltan {faltanHoy} contacto{faltanHoy === 1 ? "" : "s"} para tu cuota de hoy.
+            </p>
+          )}
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate">
+            Más leads contactados hoy = más reuniones esta semana. Tenés{" "}
+            <b className="font-semibold text-ink">{leadsNuevos} sin contactar</b> · ya trabajaste {leadsTrabajados}.
+          </p>
+        </div>
+        {leadsNuevos > 0 && (
+          <Button asChild variant={cuotaCumplida ? "outline" : "accent"} className="shrink-0">
+            <Link to="/leads">
+              Contactar leads <ArrowRight />
+            </Link>
+          </Button>
+        )}
+      </Card>
 
       {/* Leads = tu camino al objetivo */}
       <Card className="mt-4 flex flex-col gap-4 p-[18px] sm:flex-row sm:items-center">
