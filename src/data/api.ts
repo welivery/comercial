@@ -136,6 +136,26 @@ function check<T>(data: T | null, error: { message: string } | null): T {
   return (data ?? ([] as unknown as T))
 }
 
+// Supabase corta cada .select() en 1000 filas. Este helper pagina con .range()
+// hasta traer TODO — úsalo en cualquier lectura que pueda superar 1000 filas
+// (base de clientes, métricas del equipo) para no truncar conteos en silencio.
+// El builder debe incluir un .order() estable para que la paginación sea consistente.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function fetchTodo(
+  build: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: { message: string } | null }>
+): Promise<any[]> {
+  const PAGE = 1000
+  const todo: any[] = []
+  for (let desde = 0; ; desde += PAGE) {
+    const { data, error } = await build(desde, desde + PAGE - 1)
+    if (error) throw new Error(error.message)
+    todo.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+  }
+  return todo
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 // ─────────────────────────────── Vendedores ───────────────────────────────
 // Solo los del equipo (rol vendedor); los admin no aparecen en listados.
 export async function fetchVendedores(): Promise<VendedorRow[]> {
@@ -295,10 +315,14 @@ export async function eliminarSegmento(id: string): Promise<void> {
 }
 
 export async function fetchOportunidades(vendedorId?: string): Promise<Oportunidad[]> {
-  let q = supabase.from("oportunidades").select("*").order("declarada_at", { ascending: false })
-  if (vendedorId) q = q.eq("vendedor_id", vendedorId)
-  const { data, error } = await q
-  return check(data, error).map(mapOportunidad)
+  // Paginado: alimenta TODO el dashboard admin (embudo, tasa de cierre, avance).
+  // Sin paginar, con >1000 oportunidades las métricas quedarían cortadas en 1000.
+  const rows = await fetchTodo((f, t) => {
+    let q = supabase.from("oportunidades").select("*").order("declarada_at", { ascending: false }).range(f, t)
+    if (vendedorId) q = q.eq("vendedor_id", vendedorId)
+    return q
+  })
+  return rows.map(mapOportunidad)
 }
 
 // ─────────────────────────── Empresa (registro único) ───────────────────────────
@@ -317,9 +341,13 @@ async function asegurarEmpresa(p: {
   telefono?: string | null
 }): Promise<string> {
   const clave = claveLead(p.nombre)
-  const { data: cls, error } = await supabase.from("clientes").select("id, nombre, contacto, email, telefono")
-  if (error) throw new Error(error.message)
-  const match = (cls ?? []).find((c: { nombre: string }) => claveLead(c.nombre) === clave) as
+  // Paginado: si trajéramos solo las primeras 1000 filas, una empresa existente
+  // fuera de esa ventana no se encontraría y crearíamos un DUPLICADO (rompía el
+  // registro único). Con .order estable + range recorremos toda la base.
+  const cls = await fetchTodo((f, t) =>
+    supabase.from("clientes").select("id, nombre, contacto, email, telefono").order("id").range(f, t)
+  )
+  const match = cls.find((c: { nombre: string }) => claveLead(c.nombre) === clave) as
     | { id: string; contacto: string | null; email: string | null; telefono: string | null }
     | undefined
   if (match) {
@@ -327,6 +355,8 @@ async function asegurarEmpresa(p: {
     if (!match.contacto && p.contacto) patch.contacto = p.contacto
     if (!match.email && p.email) patch.email = p.email
     if (!match.telefono && p.telefono) patch.telefono = p.telefono
+    // Best-effort: si la empresa es de otro vendedor, el RLS filtra el update (0
+    // filas, sin error); no es crítico rellenar el contacto en ese caso.
     if (Object.keys(patch).length) await supabase.from("clientes").update(patch).eq("id", match.id)
     return match.id
   }
@@ -462,8 +492,14 @@ export async function guardarContactoEmpresa(
     if (k === "nota") limpio.nota = (v ?? "").trim()
     else limpio[k] = typeof v === "string" ? v.trim() || null : null
   }
-  const { error } = await supabase.from("clientes").update(limpio).eq("id", clienteId)
+  // .select() para saber si el update TOCÓ la fila: si RLS lo filtra (la empresa
+  // es de otro vendedor), PostgREST no devuelve error pero afecta 0 filas. Sin
+  // este chequeo la edición se "perdía" en silencio pareciendo exitosa.
+  const { data, error } = await supabase.from("clientes").update(limpio).eq("id", clienteId).select("id")
   if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error("No se pudo guardar: la empresa pertenece a otro vendedor. Pedile al admin que la reasigne.")
+  }
   return clienteId
 }
 
@@ -487,21 +523,9 @@ export async function fetchEventos(oportunidadId: string): Promise<OportunidadEv
 // arriba de 1000 (ex-clientes + prospección + campañas), sin esto se perdían
 // filas (los leads de campaña, que ordenan último, quedaban fuera de la ventana).
 export async function fetchClientes(): Promise<Cliente[]> {
-  const PAGE = 1000
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const todas: any[] = []
-  for (let desde = 0; ; desde += PAGE) {
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("*")
-      .order("segmento")
-      .order("nombre")
-      .range(desde, desde + PAGE - 1)
-    if (error) throw new Error(error.message)
-    todas.push(...(data ?? []))
-    if (!data || data.length < PAGE) break
-  }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+  const todas = await fetchTodo((f, t) =>
+    supabase.from("clientes").select("*").order("segmento").order("nombre").range(f, t)
+  )
   return todas.map(mapCliente)
 }
 
@@ -553,8 +577,11 @@ export async function importarDeudores(
   rows: DeudorInput[],
   accion: "marcar" | "eliminar"
 ): Promise<{ afectados: number; noEnBase: number; leadsSacados: number }> {
-  const { data: cls, error } = await supabase.from("clientes").select("id, nombre, email")
-  if (error) throw new Error(error.message)
+  // Paginado: sin esto, los deudores que caen fuera de las primeras 1000 filas no
+  // matchean → no se marcan y se los sigue prospectando pese a tener deuda.
+  const cls = await fetchTodo((f, t) =>
+    supabase.from("clientes").select("id, nombre, email").order("id").range(f, t)
+  )
   const porClave = new Map<string, { id: string; nombre: string }>()
   const porEmail = new Map<string, { id: string; nombre: string }>()
   /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -736,12 +763,17 @@ export async function fetchLeadsEquipo(): Promise<LeadActividad[]> {
   // leads históricos. (A gran escala, mover la agregación a una RPC/vista.)
   const desde = new Date()
   desde.setDate(desde.getDate() - 200) // cubre 6 meses + mes actual del gráfico
-  const { data, error } = await supabase
-    .from("leads")
-    .select("vendedor_id, estado, updated_at")
-    .neq("estado", "nuevo")
-    .gte("updated_at", desde.toISOString())
-  if (error) throw new Error(error.message)
+  // Paginado: los gráficos "Ritmo diario"/"Actividad de leads" subcontaban al
+  // truncarse en 1000 filas cuando el equipo supera ese volumen en 200 días.
+  const data = await fetchTodo((f, t) =>
+    supabase
+      .from("leads")
+      .select("vendedor_id, estado, updated_at")
+      .neq("estado", "nuevo")
+      .gte("updated_at", desde.toISOString())
+      .order("updated_at", { ascending: false })
+      .range(f, t)
+  )
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return (data ?? []).map((r: any) => ({
     vendedor_id: r.vendedor_id,
@@ -1022,8 +1054,14 @@ export async function actualizarLead(
     if (k in patch) empresaPatch[k] = (patch[k] ?? "").trim() || null
   }
   if (Object.keys(empresaPatch).length) {
-    const { error } = await supabase.from("clientes").update(empresaPatch).eq("id", clienteId)
+    // .select() para detectar el caso RLS: si la empresa es de otro vendedor el
+    // update afecta 0 filas sin error y el contacto NO se guardaba en la empresa
+    // (solo en la copia del lead), dejando el registro único inconsistente.
+    const { data, error } = await supabase.from("clientes").update(empresaPatch).eq("id", clienteId).select("id")
     if (error) throw new Error(error.message)
+    if (!data || data.length === 0) {
+      throw new Error("No se pudo guardar el contacto en la empresa: pertenece a otro vendedor. Pedile al admin que la reasigne.")
+    }
   }
   // 2) Copia inline del lead + link a la empresa. Vacío → null.
   const limpio: Record<string, string | null> = {

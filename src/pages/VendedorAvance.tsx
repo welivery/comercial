@@ -11,7 +11,7 @@ import { useLeads, useObjetivos, useOportunidades, useSeguimientoDiario } from "
 import { avanceVendedor } from "@/lib/metrics"
 import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { cn } from "@/lib/utils"
-import { HOY, PERIODO_ACTUAL, enPeriodo, tuvoReunionEfectiva } from "@/lib/display"
+import { HOY, PERIODO_ACTUAL, enPeriodo, fechaHoyChile, tuvoReunionEfectiva } from "@/lib/display"
 import type { Segmento } from "@/lib/types"
 
 // Subtítulo de cada segmento, derivado de su definición (no hardcodeado).
@@ -52,8 +52,7 @@ export function VendedorAvance() {
   // Cuota diaria de contactos (leads_cupo_diario del objetivo) y lo hecho HOY.
   const { data: diario } = useSeguimientoDiario(vendedor.id)
   const cupo = (objetivos ?? []).find((o) => o.vendedor_id === vendedor.id)?.leads_cupo_diario ?? 10
-  const hoyStr = `${HOY.getFullYear()}-${String(HOY.getMonth() + 1).padStart(2, "0")}-${String(HOY.getDate()).padStart(2, "0")}`
-  const contactadosHoy = (diario ?? []).find((d) => d.fecha === hoyStr)?.hechos ?? 0
+  const contactadosHoy = (diario ?? []).find((d) => d.fecha === fechaHoyChile())?.hechos ?? 0
   const faltanHoy = Math.max(0, cupo - contactadosHoy)
   const cuotaCumplida = contactadosHoy >= cupo
 

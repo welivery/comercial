@@ -21,11 +21,37 @@ export const MOTIVO_RECHAZO_LABEL: Record<MotivoRechazo, string> = Object.fromEn
   MOTIVOS_RECHAZO.map((m) => [m.key, m.label])
 ) as Record<MotivoRechazo, string>
 
-// Fecha de referencia del período de demo (evita depender del reloj real en la
-// vista con datos de prueba). Al conectar datos reales se usa `new Date()`.
-export const HOY = new Date("2026-08-21T12:00:00")
-export const PERIODO_ACTUAL = "2026-08"
-export const PERIODO_LABEL = "Agosto 2026"
+// Fecha/hora reales. La operación es en Chile (America/Santiago) y el servidor
+// sella fechas en esa zona (seguimiento_diario, cierres…), así que "hoy" y el
+// período se anclan a Chile — no a la zona del browser — para que coincidan.
+const TZ_CHILE = "America/Santiago"
+
+// "YYYY-MM-DD" de una fecha, en zona Chile (para comparar contra fechas del server).
+export function fechaChile(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ_CHILE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d)
+}
+// "YYYY-MM-DD" del día de hoy en Chile.
+export function fechaHoyChile(): string {
+  return fechaChile(new Date())
+}
+
+// Mes ("YYYY-MM") de un timestamp, en zona Chile.
+function mesChile(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ_CHILE, year: "numeric", month: "2-digit" }).format(d)
+}
+
+export const HOY = new Date()
+export const PERIODO_ACTUAL = fechaHoyChile().slice(0, 7)
+export const PERIODO_LABEL = (() => {
+  const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+  const [y, m] = PERIODO_ACTUAL.split("-")
+  return `${meses[Number(m) - 1]} ${y}`
+})()
 
 // ─────────────────────────── Estados del pipeline ───────────────────────────
 // Orden de columnas del tablero (perdido va aparte).
@@ -118,7 +144,9 @@ export function haceTexto(iso: string): string {
   return `hace ${d} días`
 }
 
-// ¿El timestamp cae dentro del período "YYYY-MM"?
+// ¿El timestamp cae dentro del período "YYYY-MM"? Se compara el mes en zona Chile
+// (los timestamptz vienen en UTC; una acción de fin de mes de noche en Chile no
+// debe contarse en el mes siguiente).
 export function enPeriodo(iso: string | null, periodo: string): boolean {
-  return iso != null && iso.slice(0, 7) === periodo
+  return iso != null && mesChile(new Date(iso)) === periodo
 }

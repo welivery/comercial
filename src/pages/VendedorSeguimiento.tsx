@@ -12,7 +12,7 @@ import { useInscripciones, useLeads, useOportunidades, useSecuencias, useSeguimi
 import { inscribir, marcarContactado, rechazarLead } from "@/data/api"
 import type { DiaSeguimiento } from "@/data/api"
 import { msgError } from "@/lib/errors"
-import { ESTADO_LABEL, MOTIVOS_RECHAZO } from "@/lib/display"
+import { ESTADO_LABEL, MOTIVOS_RECHAZO, fechaChile } from "@/lib/display"
 import { cn } from "@/lib/utils"
 import type { EstadoOportunidad, Lead, MotivoRechazo, Oportunidad, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
 
@@ -78,9 +78,9 @@ function haceDias(n: number): string {
 
 // ── Gamification (Etapa 3) ────────────────────────────────────────────────────
 const META_DIARIA = 5 // seguimientos por día para "cumplir" y sostener la racha
-function fechaLocal(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
+// Fecha en zona Chile (el server sella seguimiento_diario.fecha en esa zona; usar
+// la del browser desalineaba "hoy"/racha para quien no esté en Chile).
+const fechaLocal = fechaChile
 // Racha por días HÁBILES (lun-vie): cuenta hacia atrás desde hoy mientras cada
 // día hábil cumplió la meta. Hoy no corta la racha si todavía está en progreso.
 function calcRacha(dias: DiaSeguimiento[], meta: number): number {
