@@ -1,10 +1,10 @@
 import { useState } from "react"
 import { Pencil, Plus, Shield, Trash2, UserRound } from "lucide-react"
-import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { Modal } from "@/components/Modal"
 import { Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
+import { TablaScroll } from "@/components/TablaScroll"
 import { useUsuarios } from "@/hooks/useData"
 import {
   actualizarUsuario,
@@ -127,8 +127,8 @@ export function AdminUsuarios() {
         </Button>
       </PageHead>
 
-      <Card className="overflow-x-auto">
-        <table className="w-full border-collapse">
+      <TablaScroll>
+        <table className="tbl-fija tbl-acciones w-full border-collapse">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
               <th className="px-4 py-2.5 font-medium">Usuario</th>
@@ -214,7 +214,7 @@ export function AdminUsuarios() {
             )}
           </tbody>
         </table>
-      </Card>
+      </TablaScroll>
 
       <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
         <UserRound size={16} className="mt-0.5 shrink-0 text-blue" />

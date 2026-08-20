@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { Modal } from "@/components/Modal"
 import { BucketChip, Cargando, ErrorMsg, SegmentoBadge } from "@/components/widgets"
+import { TablaScroll } from "@/components/TablaScroll"
 import { useClientes, useContexto, useVendedores } from "@/hooks/useData"
 import {
   actualizarCliente,
@@ -451,8 +452,8 @@ export function AdminClientes() {
         </div>
       )}
 
-      <Card className="overflow-x-auto">
-        <table className="w-full border-collapse">
+      <TablaScroll>
+        <table className="tbl-fija tbl-acciones w-full border-collapse">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
               <th className="w-9 px-4 py-2.5">
@@ -572,7 +573,7 @@ export function AdminClientes() {
             )}
           </tbody>
         </table>
-      </Card>
+      </TablaScroll>
 
       <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
         <Sparkles size={16} className="shrink-0 text-blue" />

@@ -180,3 +180,27 @@
   background: rgba(255, 255, 255, 0.22);
   background-clip: content-box;
 }
+
+/* Tablas anchas dentro de un alto acotado (componente TablaScroll):
+   - `tbl-fija`: el encabezado queda FIJO arriba al scrollear vertical. Uso
+     box-shadow inset (no border) porque con border-collapse los bordes de un
+     thead sticky desaparecen.
+   - `tbl-acciones`: la ÚLTIMA columna (acciones) queda FIJA a la derecha, así
+     los botones de cada fila están siempre a la vista sin tener que scrollear
+     horizontal hasta el final. Fondo = superficie de la card (blanco / navy). */
+.tbl-fija thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+.tbl-acciones thead th:last-child,
+.tbl-acciones tbody td:last-child {
+  position: sticky;
+  right: 0;
+  background: var(--card);
+  box-shadow: inset 1px 0 0 var(--border);
+}
+.tbl-acciones thead th:last-child { z-index: 3; }
+.tbl-acciones tbody td:last-child { z-index: 1; }

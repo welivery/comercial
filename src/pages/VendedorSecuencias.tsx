@@ -27,6 +27,7 @@ import { PageHead } from "@/components/PageHead"
 import { ConexionEmail } from "@/components/ConexionEmail"
 import { ConfigAutomatizacion } from "@/components/ConfigAutomatizacion"
 import { Cargando, ErrorMsg } from "@/components/widgets"
+import { TablaScroll } from "@/components/TablaScroll"
 import { useVentas } from "@/store"
 import { useInscripciones, useInscripcionesEquipo, useLeads, useSecuencias } from "@/hooks/useData"
 import {
@@ -460,8 +461,8 @@ export function VendedorSecuencias() {
             <h2 className="mb-2 text-[14px] font-semibold text-navy">Envíos del equipo</h2>
             <KpiFila k={kpiEquipo} />
             {porVendedor.length > 0 && (
-              <Card className="mt-3 overflow-x-auto">
-                <table className="w-full border-collapse">
+              <TablaScroll className="mt-3">
+                <table className="tbl-fija w-full border-collapse">
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
                       <th className="px-4 py-2.5 font-medium">Vendedor</th>
@@ -485,7 +486,7 @@ export function VendedorSecuencias() {
                     ))}
                   </tbody>
                 </table>
-              </Card>
+              </TablaScroll>
             )}
           </div>
         </>
@@ -747,8 +748,8 @@ export function VendedorSecuencias() {
           Todavía no inscribiste a nadie. Usá “Inscribir contacto” para arrancar una cadencia.
         </Card>
       ) : (
-        <Card className="overflow-x-auto">
-          <table className="w-full border-collapse">
+        <TablaScroll>
+          <table className="tbl-fija tbl-acciones w-full border-collapse">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
                 <th className="px-4 py-2.5 font-medium">Contacto</th>
@@ -915,7 +916,7 @@ export function VendedorSecuencias() {
               })}
             </tbody>
           </table>
-        </Card>
+        </TablaScroll>
       )}
       </div>
       )}

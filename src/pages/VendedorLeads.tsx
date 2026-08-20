@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
 import { BucketChip, Cargando } from "@/components/widgets"
+import { TablaScroll } from "@/components/TablaScroll"
 import { useVentas } from "@/store"
 import { useCreditosLeads, useInscripciones, useLeads, useObjetivos, useSecuencias } from "@/hooks/useData"
 import {
@@ -860,8 +861,8 @@ export function VendedorLeads() {
               </p>
             </Card>
           ) : (
-            <Card className="mt-3 overflow-x-auto">
-              <table className="w-full border-collapse">
+            <TablaScroll className="mt-3">
+              <table className="tbl-fija tbl-acciones w-full border-collapse">
                 <thead>
                   <tr className="text-left text-[11px] uppercase tracking-wide text-slate">
                     <th className="w-10 px-4 py-2.5">
@@ -1105,7 +1106,7 @@ export function VendedorLeads() {
                   })}
                 </tbody>
               </table>
-            </Card>
+            </TablaScroll>
           )}
         </>
       )}
