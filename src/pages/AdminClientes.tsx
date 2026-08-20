@@ -6,6 +6,7 @@ import { PageHead } from "@/components/PageHead"
 import { Modal } from "@/components/Modal"
 import { BucketChip, Cargando, ErrorMsg, SegmentoBadge } from "@/components/widgets"
 import { TablaScroll } from "@/components/TablaScroll"
+import { usePersistedState } from "@/hooks/usePersistedState"
 import { useClientes, useContexto, useVendedores } from "@/hooks/useData"
 import {
   actualizarCliente,
@@ -53,7 +54,7 @@ const VACIO: ClienteInput = {
 }
 
 export function AdminClientes() {
-  const [filtro, setFiltro] = useState<Filtro>("cartera")
+  const [filtro, setFiltro] = usePersistedState<Filtro>("clientes.filtro", "cartera")
   const toast = useToast()
   const { data: clientes, loading, error, reload } = useClientes()
   const { data: vendedores } = useVendedores()
@@ -69,7 +70,7 @@ export function AdminClientes() {
   const [errForm, setErrForm] = useState<string | null>(null)
 
   // Filtro por vendedor asignado ("" = todos, "sin" = sin asignar, o un id).
-  const [vendFiltro, setVendFiltro] = useState<string>("")
+  const [vendFiltro, setVendFiltro] = usePersistedState<string>("clientes.vend", "")
 
   // Selección para asignar leads a un vendedor.
   const [sel, setSel] = useState<Set<string>>(new Set())

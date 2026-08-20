@@ -25,6 +25,7 @@ import { BucketChip, Cargando } from "@/components/widgets"
 import { TablaScroll } from "@/components/TablaScroll"
 import { useVentas } from "@/store"
 import { useCreditosLeads, useInscripciones, useLeads, useObjetivos, useSecuencias } from "@/hooks/useData"
+import { usePersistedState } from "@/hooks/usePersistedState"
 import {
   actualizarLead,
   asignarLeads,
@@ -156,14 +157,16 @@ export function VendedorLeads() {
   const [status, setStatus] = useState("Analizando…")
   const [aviso, setAviso] = useState<{ tipo: "ok" | "error" | "info"; texto: string } | null>(null)
 
-  const [estadoFiltro, setEstadoFiltro] = useState<LeadEstado | "todos">("nuevo")
-  const [periodo, setPeriodo] = useState("todo")
-  const [secFiltro, setSecFiltro] = useState<"todos" | "en_sec" | "sin_sec">("todos")
-  const [contFiltro, setContFiltro] = useState<"todos" | "contactados" | "sin_contactar">("todos")
-  const [campFiltro, setCampFiltro] = useState<string>("todas") // "todas" | "sin" | nombre de campaña
+  // Filtros y orden se recuerdan en localStorage: si el vendedor sale de la
+  // pestaña (o recarga) y vuelve, encuentra la lista como la había dejado.
+  const [estadoFiltro, setEstadoFiltro] = usePersistedState<LeadEstado | "todos">("leads.estado", "nuevo")
+  const [periodo, setPeriodo] = usePersistedState("leads.periodo", "todo")
+  const [secFiltro, setSecFiltro] = usePersistedState<"todos" | "en_sec" | "sin_sec">("leads.sec", "todos")
+  const [contFiltro, setContFiltro] = usePersistedState<"todos" | "contactados" | "sin_contactar">("leads.cont", "todos")
+  const [campFiltro, setCampFiltro] = usePersistedState<string>("leads.camp", "todas") // "todas" | "sin" | nombre de campaña
   // Orden por columna (al tocar el título). null = orden por defecto (prioridad + reciente).
-  const [sortCol, setSortCol] = useState<null | "empresa" | "email" | "telefono" | "origen">(null)
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const [sortCol, setSortCol] = usePersistedState<null | "empresa" | "email" | "telefono" | "origen">("leads.sortCol", null)
+  const [sortDir, setSortDir] = usePersistedState<"asc" | "desc">("leads.sortDir", "asc")
   function ordenarPor(col: "empresa" | "email" | "telefono" | "origen") {
     if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
     else {
