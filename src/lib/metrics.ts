@@ -7,7 +7,6 @@ import {
   ESTADOS_PIPELINE,
   diasEntre,
   enPeriodo,
-  tuvoReunionEfectiva,
 } from "@/lib/display"
 import type {
   Bucket,
@@ -48,9 +47,13 @@ export function avanceVendedor(
   segmentos?: Segmento[]
 ): AvanceVendedor {
   const segs = segmentosActivos(segmentos ?? getSegmentosRegistry())
-  // Efectivas del período: llegaron al hito y su reunión efectiva cae en el mes.
+  // Efectivas del período: la reunión se REALIZÓ (tiene fecha de reunión efectiva)
+  // y esa fecha cae en el mes. Cuenta aunque la oportunidad después se haya perdido
+  // o ganado: la reunión ya ocurrió y suma al objetivo del vendedor. El hito
+  // `reunion_efectiva_at` se setea al alcanzar la etapa y NO se borra al pasar a
+  // "perdido" (ver moverOportunidad), así que es la señal fiable del hecho ocurrido.
   const efectivasOps = ops.filter(
-    (o) => tuvoReunionEfectiva(o.estado) && enPeriodo(o.reunion_efectiva_at, periodo)
+    (o) => o.reunion_efectiva_at != null && enPeriodo(o.reunion_efectiva_at, periodo)
   )
   const efectivas = efectivasOps.length
 

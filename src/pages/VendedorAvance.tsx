@@ -11,7 +11,7 @@ import { useLeads, useObjetivos, useOportunidades, useSeguimientoDiario } from "
 import { avanceVendedor } from "@/lib/metrics"
 import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { cn } from "@/lib/utils"
-import { HOY, PERIODO_ACTUAL, enPeriodo, fechaHoyChile, tuvoReunionEfectiva } from "@/lib/display"
+import { HOY, PERIODO_ACTUAL, enPeriodo, fechaHoyChile } from "@/lib/display"
 import type { Segmento } from "@/lib/types"
 
 // Subtítulo de cada segmento, derivado de su definición (no hardcodeado).
@@ -72,7 +72,7 @@ export function VendedorAvance() {
   // Ritmo REAL: reuniones efectivas acumuladas por día del mes.
   const ritmo = useMemo(() => {
     const dias = ops
-      .filter((o) => tuvoReunionEfectiva(o.estado) && o.reunion_efectiva_at && enPeriodo(o.reunion_efectiva_at, PERIODO_ACTUAL))
+      .filter((o) => o.reunion_efectiva_at && enPeriodo(o.reunion_efectiva_at, PERIODO_ACTUAL))
       .map((o) => new Date(o.reunion_efectiva_at as string).getDate())
     const cum: number[] = []
     for (let d = 1; d <= hoyDia; d++) cum.push(dias.filter((x) => x <= d).length)
