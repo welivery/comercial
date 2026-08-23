@@ -727,7 +727,7 @@ export interface LeadActividad {
 }
 
 // Agregados de leads por vendedor (dashboard admin). Los calcula Postgres vía
-// RPC (metricas-leads-rpc.sql); "sin_trabajar" = pila real pendiente.
+// RPC (migrations/metricas-leads-rpc.sql); "sin_trabajar" = pila real pendiente.
 export interface LeadsVendedorKpi {
   vendedor_id: string
   total: number
@@ -1013,7 +1013,7 @@ export async function sumarSeguimiento(vendedorId?: string): Promise<void> {
     console.warn(
       "[seguimiento] no se pudo registrar la racha:",
       error.message,
-      "— revisá que estén corridos seguimiento-diario.sql y seguimiento-por-vendedor.sql, y que el usuario esté linkeado a un vendedor."
+      "— revisá que estén corridos supabase/migrations/seguimiento-diario.sql y seguimiento-por-vendedor.sql, y que el usuario esté linkeado a un vendedor."
     )
   }
 }

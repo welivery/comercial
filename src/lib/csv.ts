@@ -28,7 +28,7 @@ export const CSV_PLANTILLA =
 
 // Parser CSV robusto (comillas, comas escapadas, delimitador , o ;).
 function parseCsv(text: string): string[][] {
-  const t = text.replace(/^﻿/, "") // BOM
+  const t = text.replace(/^\uFEFF/, "") // BOM
   // Delimitador: el más frecuente en la primera línea.
   const firstLine = t.slice(0, t.indexOf("\n") === -1 ? t.length : t.indexOf("\n"))
   const delim = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ";" : ","

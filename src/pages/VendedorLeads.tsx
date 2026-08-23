@@ -283,7 +283,8 @@ export function VendedorLeads() {
   function toggleOne(id: string) {
     setSel((s) => {
       const n = new Set(s)
-      n.has(id) ? n.delete(id) : n.add(id)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
       return n
     })
   }
@@ -735,7 +736,7 @@ export function VendedorLeads() {
         <Card className="mt-4 p-6 text-center">
           <p className="text-[14px] font-semibold text-error">No se pudieron cargar los leads</p>
           <p className="mx-auto mt-1.5 max-w-[56ch] text-[13px] text-slate">
-            {error}. Si es la primera vez, falta correr <code className="rounded bg-mist px-1">supabase/leads.sql</code>{" "}
+            {error}. Si es la primera vez, falta correr <code className="rounded bg-mist px-1">supabase/migrations/leads.sql</code>{" "}
             en Supabase.
           </p>
         </Card>

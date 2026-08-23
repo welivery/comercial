@@ -2,7 +2,7 @@
 // Los segmentos son configurables por el admin (tabla `segmentos`). Se cargan
 // una vez al entrar (ver VentasLayout → setSegmentosRegistry) y los componentes
 // se suscriben con useSegmentos(); antes de cargar se usan los defaults, que
-// coinciden con la semilla de supabase/segmentos.sql.
+// coinciden con la semilla de supabase/migrations/segmentos.sql.
 
 import { useSyncExternalStore } from "react"
 import type { Bucket, DatosClasificacion, Segmento } from "@/lib/types"
