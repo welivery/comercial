@@ -1,9 +1,9 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { ArrowRight, Clock, Columns3, Sparkles, Target, TrendingUp, Users } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { PageHead, MonthPill } from "@/components/PageHead"
+import { PageHead, MonthPicker } from "@/components/PageHead"
 import { StatTile } from "@/components/StatTile"
 import { Cargando, ErrorMsg, Progress } from "@/components/widgets"
 import { useVentas } from "@/store"
@@ -11,7 +11,7 @@ import { useLeads, useObjetivos, useOportunidades, useSeguimientoDiario } from "
 import { avanceVendedor } from "@/lib/metrics"
 import { segColor, segLabel, segmentosActivos, useSegmentos } from "@/lib/buckets"
 import { cn } from "@/lib/utils"
-import { HOY, PERIODO_ACTUAL, enPeriodo, fechaHoyChile } from "@/lib/display"
+import { HOY, PERIODO_ACTUAL, enPeriodo, fechaHoyChile, mesLabelDe } from "@/lib/display"
 import type { Segmento } from "@/lib/types"
 
 // Subtítulo de cada segmento, derivado de su definición (no hardcodeado).
@@ -35,16 +35,21 @@ const MENSAJES = [
 
 export function VendedorAvance() {
   const { vendedor } = useVentas()
+  // Mes seleccionado ("YYYY-MM"). Arranca en el mes actual; se puede ver meses
+  // anteriores. Las reuniones se cuentan por su mes; el objetivo persiste (se
+  // arrastra el último cargado si ese mes no tiene uno propio).
+  const [periodo, setPeriodo] = useState(PERIODO_ACTUAL)
+  const esActual = periodo === PERIODO_ACTUAL
   const { data: oportunidades, loading, error } = useOportunidades(vendedor.id)
-  const { data: objetivos } = useObjetivos(PERIODO_ACTUAL)
+  const { data: objetivos } = useObjetivos(periodo)
   const { data: leadsData } = useLeads(vendedor.id)
   const segsReg = useSegmentos()
   const activos = useMemo(() => segmentosActivos(segsReg), [segsReg])
   const ops = useMemo(() => oportunidades ?? [], [oportunidades])
   const av = useMemo(() => {
     const obj = (objetivos ?? []).find((o) => o.vendedor_id === vendedor.id)
-    return avanceVendedor(ops, obj, PERIODO_ACTUAL, activos)
-  }, [ops, objetivos, vendedor.id, activos])
+    return avanceVendedor(ops, obj, periodo, activos)
+  }, [ops, objetivos, vendedor.id, activos, periodo])
 
   const leadsNuevos = (leadsData ?? []).filter((l) => l.estado === "nuevo").length
   const leadsTrabajados = (leadsData ?? []).filter((l) => l.estado !== "nuevo").length
@@ -56,11 +61,13 @@ export function VendedorAvance() {
   const faltanHoy = Math.max(0, cupo - contactadosHoy)
   const cuotaCumplida = contactadosHoy >= cupo
 
-  // Fechas del mes.
-  const diasEnMes = new Date(HOY.getFullYear(), HOY.getMonth() + 1, 0).getDate()
-  const hoyDia = HOY.getDate()
+  // Fechas del período elegido. Para un mes ya cerrado, se considera totalmente
+  // transcurrido (hoyDia = último día), así el ritmo muestra el mes completo.
+  const [py, pm] = periodo.split("-").map(Number)
+  const diasEnMes = new Date(py, pm, 0).getDate()
+  const hoyDia = esActual ? HOY.getDate() : diasEnMes
   const diasRestantes = Math.max(0, diasEnMes - hoyDia)
-  const mensaje = MENSAJES[hoyDia % MENSAJES.length]
+  const mensaje = MENSAJES[HOY.getDate() % MENSAJES.length]
 
   // Objetivo por segmento en CANTIDAD (no %), y cuánto falta del prioritario
   // (el primer segmento activo por orden = el más valioso).
@@ -72,12 +79,12 @@ export function VendedorAvance() {
   // Ritmo REAL: reuniones efectivas acumuladas por día del mes.
   const ritmo = useMemo(() => {
     const dias = ops
-      .filter((o) => o.reunion_efectiva_at && enPeriodo(o.reunion_efectiva_at, PERIODO_ACTUAL))
+      .filter((o) => o.reunion_efectiva_at && enPeriodo(o.reunion_efectiva_at, periodo))
       .map((o) => new Date(o.reunion_efectiva_at as string).getDate())
     const cum: number[] = []
     for (let d = 1; d <= hoyDia; d++) cum.push(dias.filter((x) => x <= d).length)
     return cum
-  }, [ops, hoyDia])
+  }, [ops, hoyDia, periodo])
   const idealHoy = av.objetivo ? Math.round((av.objetivo * hoyDia) / diasEnMes) : 0
   const atrasado = av.efectivas < idealHoy
 
@@ -101,28 +108,42 @@ export function VendedorAvance() {
   return (
     <>
       <PageHead titulo="Mi avance" descripcion={`${vendedor.nombre} · ${vendedor.zona}`}>
-        <MonthPill />
+        <MonthPicker value={periodo} onChange={setPeriodo} />
       </PageHead>
 
-      {/* Banner de urgencia + motivación (leads → reuniones → objetivo) */}
+      {/* Banner: urgencia + motivación en el mes actual; resumen en meses cerrados. */}
       <div className="mb-[18px] flex flex-col gap-3 rounded-xl bg-gradient-to-br from-navy via-[#1d3a6b] to-[#123f52] p-5 text-white sm:flex-row sm:items-center">
         <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-mint/20">
           <Target size={22} className="text-mint" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold text-white">
-            {av.restantes > 0 ? (
-              <>
-                Te faltan {av.restantes} reunion{av.restantes === 1 ? "" : "es"} efectiva
-                {av.restantes === 1 ? "" : "s"} para tu objetivo · quedan {diasRestantes} días
-              </>
-            ) : (
-              <>¡Llegaste a tu objetivo de reuniones del mes! 🎉</>
-            )}
-          </p>
-          <p className="mt-0.5 text-[12.5px] text-[#c6d0e0]">{mensaje}</p>
+          {esActual ? (
+            <>
+              <p className="text-[14px] font-semibold text-white">
+                {av.restantes > 0 ? (
+                  <>
+                    Te faltan {av.restantes} reunion{av.restantes === 1 ? "" : "es"} efectiva
+                    {av.restantes === 1 ? "" : "s"} para tu objetivo · quedan {diasRestantes} días
+                  </>
+                ) : (
+                  <>¡Llegaste a tu objetivo de reuniones del mes! 🎉</>
+                )}
+              </p>
+              <p className="mt-0.5 text-[12.5px] text-[#c6d0e0]">{mensaje}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-[14px] font-semibold text-white">
+                {mesLabelDe(periodo)}: {av.efectivas} de {av.objetivo} reunion
+                {av.objetivo === 1 ? "" : "es"} efectiva{av.objetivo === 1 ? "" : "s"} ({av.pctObjetivo}% del objetivo)
+              </p>
+              <p className="mt-0.5 text-[12.5px] text-[#c6d0e0]">
+                Estás viendo un mes cerrado. Volvé al <b className="font-semibold text-white">mes actual</b> para trabajar tus leads.
+              </p>
+            </>
+          )}
         </div>
-        {leadsNuevos > 0 && (
+        {esActual && leadsNuevos > 0 && (
           <Button asChild className="shrink-0 bg-mint text-navy hover:bg-mint/90">
             <Link to="/leads">
               Contactar {leadsNuevos} lead{leadsNuevos === 1 ? "" : "s"} <ArrowRight />
@@ -180,6 +201,9 @@ export function VendedorAvance() {
         />
       </div>
 
+      {/* Bloque "de hoy": cuota diaria y leads. Solo aplica al mes en curso. */}
+      {esActual && (
+      <>
       {/* Cuota diaria de contactos — resaltada si va atrás */}
       <Card
         className={cn(
@@ -252,6 +276,8 @@ export function VendedorAvance() {
           </Link>
         </Button>
       </Card>
+      </>
+      )}
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1.6fr_1fr] lg:items-start">
         {/* Reuniones por tipo de cliente */}
@@ -306,16 +332,27 @@ export function VendedorAvance() {
             {realArea && <path d={realArea} fill="url(#rit)" />}
             {realPath && <path d={realPath} fill="none" stroke="#2F5BE6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
             {ritmo.length > 0 && <circle cx={hoyX} cy={y(ritmo[ritmo.length - 1])} r="4" fill="#2F5BE6" />}
-            {/* hoy */}
-            <line x1={hoyX} y1="4" x2={hoyX} y2={H} stroke="#F2563A" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.7" />
-            <text x={Math.min(hoyX - 2, W - 46)} y={H + 12} fontSize="8.5" fill="#F2563A">
-              hoy · día {hoyDia}
-            </text>
+            {/* hoy — solo en el mes en curso */}
+            {esActual && (
+              <>
+                <line x1={hoyX} y1="4" x2={hoyX} y2={H} stroke="#F2563A" strokeWidth="1.5" strokeDasharray="3 2" opacity="0.7" />
+                <text x={Math.min(hoyX - 2, W - 46)} y={H + 12} fontSize="8.5" fill="#F2563A">
+                  hoy · día {hoyDia}
+                </text>
+              </>
+            )}
           </svg>
           <p className="mt-2 text-[12px] leading-relaxed text-slate">
-            Vas <b className="font-semibold text-ink">{av.efectivas} de {av.objetivo}</b>.{" "}
+            {esActual ? "Vas " : "Cerraste el mes con "}
+            <b className="font-semibold text-ink">{av.efectivas} de {av.objetivo}</b>.{" "}
             {av.objetivo === 0 ? (
-              "Todavía no tenés objetivo cargado."
+              "No había objetivo cargado para este mes."
+            ) : !esActual ? (
+              av.efectivas >= av.objetivo ? (
+                <>¡Objetivo cumplido! 🎉</>
+              ) : (
+                <>Quedó a {Math.max(0, av.objetivo - av.efectivas)} del objetivo.</>
+              )
             ) : atrasado ? (
               <>
                 Para ir al día deberías llevar <b className="font-semibold text-coral">~{idealHoy}</b>. Contactá

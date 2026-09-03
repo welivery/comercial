@@ -257,8 +257,23 @@ export async function fetchVendedorByUser(userId: string): Promise<VendedorRow |
 }
 
 export async function fetchObjetivos(periodo: string): Promise<Objetivo[]> {
-  const { data, error } = await supabase.from("objetivos").select("*").eq("periodo", periodo)
-  return check(data, error).map(mapObjetivo)
+  // El objetivo PERSISTE mes a mes: si un vendedor no tiene fila propia para el
+  // período pedido, se arrastra su objetivo más reciente de un período anterior
+  // (la meta no se reinicia al cambiar de mes). Se puede sobrescribir un mes
+  // puntual guardando una fila para ese período (más-específico-gana).
+  const { data, error } = await supabase
+    .from("objetivos")
+    .select("*")
+    .lte("periodo", periodo)
+    .order("periodo", { ascending: false })
+  const rows = check(data, error).map(mapObjetivo)
+  const porVendedor = new Map<string, Objetivo>()
+  for (const o of rows) {
+    // rows viene ordenado por período descendente: el primero de cada vendedor es
+    // su objetivo vigente (fila propia del período, o la última anterior arrastrada).
+    if (!porVendedor.has(o.vendedor_id)) porVendedor.set(o.vendedor_id, { ...o, periodo })
+  }
+  return [...porVendedor.values()]
 }
 
 // Alta/edición del objetivo mensual de un vendedor (upsert por vendedor+período).

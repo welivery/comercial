@@ -47,11 +47,30 @@ function mesChile(d: Date): string {
 
 export const HOY = new Date()
 export const PERIODO_ACTUAL = fechaHoyChile().slice(0, 7)
-export const PERIODO_LABEL = (() => {
-  const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-  const [y, m] = PERIODO_ACTUAL.split("-")
-  return `${meses[Number(m) - 1]} ${y}`
-})()
+
+const MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+// "2026-09" → "Septiembre 2026".
+export function mesLabelDe(periodo: string): string {
+  const [y, m] = periodo.split("-")
+  return `${MESES_ES[Number(m) - 1] ?? m} ${y}`
+}
+
+// Últimos `n` meses (incluye el actual), del más nuevo al más viejo. Para el
+// selector de mes del dashboard: [{ value: "2026-09", label: "Septiembre 2026" }].
+export function mesesRecientes(n = 12): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = []
+  let [y, m] = PERIODO_ACTUAL.split("-").map(Number)
+  for (let i = 0; i < n; i++) {
+    const value = `${y}-${String(m).padStart(2, "0")}`
+    out.push({ value, label: mesLabelDe(value) })
+    m--
+    if (m === 0) { m = 12; y-- }
+  }
+  return out
+}
+
+export const PERIODO_LABEL = mesLabelDe(PERIODO_ACTUAL)
 
 // ─────────────────────────── Estados del pipeline ───────────────────────────
 // Orden de columnas del tablero (perdido va aparte).
