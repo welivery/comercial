@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { MapPin, Package, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHead } from "@/components/PageHead"
+import { PageHead, MonthPicker } from "@/components/PageHead"
 import { Modal } from "@/components/Modal"
 import { BucketChip, Cargando, ErrorMsg } from "@/components/widgets"
 import { useVentas } from "@/store"
@@ -16,6 +16,7 @@ import {
   ESTADOS_PIPELINE,
   ESTADO_COLOR,
   ESTADO_LABEL,
+  enPeriodo,
   fmtEnvios,
   haceTexto,
   tuvoReunionEfectiva,
@@ -66,7 +67,14 @@ export function VendedorPipeline() {
   const navigate = useNavigate()
   const toast = useToast()
   const { data: oportunidades, loading, error, reload } = useOportunidades(vendedor.id)
-  const ops = useMemo(() => oportunidades ?? [], [oportunidades])
+  const todas = useMemo(() => oportunidades ?? [], [oportunidades])
+  // Filtro por mes (opcional): "" = todos. Filtra por cuándo se declaró la
+  // oportunidad (declarada_at), para ver las que entraron en ese mes.
+  const [mes, setMes] = useState("")
+  const ops = useMemo(
+    () => (mes ? todas.filter((o) => enPeriodo(o.declarada_at, mes)) : todas),
+    [todas, mes]
+  )
   const activas = ops.filter(esActiva).length
 
   const [drag, setDrag] = useState<Oportunidad | null>(null)
@@ -163,7 +171,15 @@ export function VendedorPipeline() {
 
   return (
     <>
-      <PageHead titulo="Mis oportunidades" descripcion={`${activas} activas · arrastrá las tarjetas entre columnas`}>
+      <PageHead
+        titulo="Mis oportunidades"
+        descripcion={
+          mes
+            ? `${activas} activas · declaradas en el mes elegido`
+            : `${activas} activas · arrastrá las tarjetas entre columnas`
+        }
+      >
+        <MonthPicker value={mes} onChange={setMes} todosLabel="Todos los meses" />
         <Button variant="blue" onClick={() => { setForm(VACIO); setErrForm(null); setAbierto(true) }}>
           <Plus /> Nueva oportunidad
         </Button>

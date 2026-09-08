@@ -13,17 +13,21 @@ export function MonthPill() {
 
 // Selector de mes ("YYYY-MM"). Muestra los últimos `meses` (incluye el actual);
 // si el valor elegido es más viejo que ese rango, se agrega igual para no perderlo.
+// `todosLabel` agrega una opción "sin filtro" (value "") al principio.
 export function MonthPicker({
   value,
   onChange,
   meses = 12,
+  todosLabel,
 }: {
   value: string
   onChange: (periodo: string) => void
   meses?: number
+  todosLabel?: string
 }) {
   const opts = mesesRecientes(meses)
-  if (!opts.some((o) => o.value === value)) {
+  if (todosLabel) opts.unshift({ value: "", label: todosLabel })
+  if (value && !opts.some((o) => o.value === value)) {
     opts.push({ value, label: mesLabelDe(value) })
   }
   return (
