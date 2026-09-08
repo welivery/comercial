@@ -256,7 +256,8 @@ create policy "op: propias insert" on oportunidades for insert
 create policy "op: propias update" on oportunidades for update
   using (vendedor_id = current_vendedor_id() or is_admin_ventas())
   with check (vendedor_id = current_vendedor_id() or is_admin_ventas());
-create policy "op: admin delete" on oportunidades for delete using (is_admin_ventas());
+create policy "op: propias delete" on oportunidades for delete
+  using (vendedor_id = current_vendedor_id() or is_admin_ventas());
 
 -- eventos: visibles/insertables si la oportunidad es del vendedor o es admin.
 create policy "evt: ver" on oportunidad_eventos for select using (

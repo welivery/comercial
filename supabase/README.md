@@ -92,6 +92,8 @@ Correr en este orden si todavía no se corrieron. Salvo aviso, son **solo SQL**
 24. `leads-prioridad.sql` — marca de prioridad/campaña en leads y clientes.
 25. `seguimiento-por-vendedor.sql` — RPC `sumar_seguimiento_para(v)` (el admin
     acredita la racha del vendedor que está viendo, no la suya).
+26. `oportunidades-delete-vendedor.sql` — RLS: el vendedor puede eliminar SUS
+    propias oportunidades (habilita el botón "Eliminar" del detalle). Solo SQL.
 
 **Verificación:** `verificar-seguridad.sql` — consulta de solo lectura para
 confirmar que el endurecimiento de `seguridad.sql` quedó aplicado. Correr por país.

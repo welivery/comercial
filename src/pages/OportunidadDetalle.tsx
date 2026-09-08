@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { Link, useParams } from "react-router-dom"
-import { ArrowLeft, Building2, FileText, Mail, Pencil, Phone, Receipt } from "lucide-react"
+import { Link, useNavigate, useParams } from "react-router-dom"
+import { ArrowLeft, Building2, FileText, Mail, Pencil, Phone, Receipt, Trash2 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
@@ -8,6 +8,7 @@ import { BucketChip, Cargando, EstadoBadge } from "@/components/widgets"
 import { useCliente, useEventos, useOportunidad } from "@/hooks/useData"
 import {
   actualizarOportunidad,
+  eliminarOportunidad,
   guardarContactoEmpresa,
   moverOportunidad,
   type OportunidadPatch,
@@ -46,6 +47,7 @@ interface ContactoForm {
 
 export function OportunidadDetalle() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { data: o, loading, reload } = useOportunidad(id)
   const { data: empresa, reload: reloadEmpresa } = useCliente(o?.cliente_id)
   const { data: eventosData } = useEventos(id)
@@ -53,6 +55,22 @@ export function OportunidadDetalle() {
   const [perdOpen, setPerdOpen] = useState(false)
   const [perdMotivo, setPerdMotivo] = useState("")
   const [perdSaving, setPerdSaving] = useState(false)
+
+  // Eliminar la oportunidad (con confirmación).
+  const [delOpen, setDelOpen] = useState(false)
+  const [delSaving, setDelSaving] = useState(false)
+  async function eliminar() {
+    if (!o) return
+    setDelSaving(true)
+    try {
+      await eliminarOportunidad(o)
+      toast.ok("Oportunidad eliminada.")
+      navigate("/pipeline")
+    } catch (err) {
+      toast.error(msgError(err, "No se pudo eliminar"))
+      setDelSaving(false)
+    }
+  }
 
   // Modal "Editar ficha": datos del prospecto (oportunidad) + contacto/notas (empresa).
   const [editOpen, setEditOpen] = useState(false)
@@ -295,6 +313,13 @@ export function OportunidadDetalle() {
               <Receipt /> Cotizar
               <span className="text-[10px] text-muted">(pronto)</span>
             </Button>
+            <Button
+              variant="outline"
+              onClick={() => setDelOpen(true)}
+              className="ml-auto border-error/40 text-error hover:bg-[#FBE2E2] hover:text-error"
+            >
+              <Trash2 /> Eliminar
+            </Button>
           </div>
         </Card>
 
@@ -359,6 +384,32 @@ export function OportunidadDetalle() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal: eliminar oportunidad */}
+      <Modal open={delOpen} onClose={() => setDelOpen(false)} title="Eliminar oportunidad">
+        <div className="flex flex-col gap-3.5">
+          <p className="rounded-lg border-l-2 border-error/40 bg-[#FBE2E2]/50 px-3 py-2.5 text-[13px] leading-relaxed text-[#8a2f2f]">
+            Vas a eliminar <b>{o.ecommerce}</b> y todo su historial. Esta acción no se puede deshacer.
+          </p>
+          <p className="text-[12.5px] leading-relaxed text-slate">
+            Si esta oportunidad vino de un lead, ese lead vuelve a tus leads <b className="text-ink">sin clasificar</b>{" "}
+            para que no se pierda. El contacto y las notas de la empresa quedan intactos.
+          </p>
+          <div className="mt-1 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setDelOpen(false)} disabled={delSaving}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={eliminar}
+              disabled={delSaving}
+              className="bg-error text-white hover:bg-error/90"
+            >
+              <Trash2 /> {delSaving ? "Eliminando…" : "Eliminar oportunidad"}
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Modal: editar ficha (prospecto + contacto/notas de la empresa) */}

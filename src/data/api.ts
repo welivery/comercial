@@ -483,6 +483,23 @@ export async function actualizarOportunidad(o: Oportunidad, patch: OportunidadPa
   if (error) throw new Error(error.message)
 }
 
+// Elimina una oportunidad (su historial se borra por cascade). Si vino de un lead,
+// ese lead vuelve a "nuevo" para no perderlo (queda de nuevo en la pila del
+// vendedor). Requiere la política RLS "op: propias delete" (ver migración
+// oportunidades-delete-vendedor.sql) para que el vendedor borre las suyas.
+export async function eliminarOportunidad(o: Oportunidad): Promise<void> {
+  // Guardamos los leads ligados ANTES de borrar (el FK les pone oportunidad_id a
+  // null al eliminar, así que después no se podrían encontrar por ese vínculo).
+  const { data: ligados } = await supabase.from("leads").select("id").eq("oportunidad_id", o.id)
+  const { data, error } = await supabase.from("oportunidades").delete().eq("id", o.id).select("id")
+  if (error) throw new Error(error.message)
+  if (!data || data.length === 0) {
+    throw new Error("No se pudo eliminar: la oportunidad es de otro vendedor o ya no existe.")
+  }
+  const ids = (ligados ?? []).map((l: any) => l.id) // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (ids.length) await supabase.from("leads").update({ estado: "nuevo" }).in("id", ids)
+}
+
 // Registro único: guarda el contacto + notas en la EMPRESA de la oportunidad.
 // Si la oportunidad todavía no tiene empresa vinculada (cliente_id null), la
 // asegura y la linkea. Lo editado queda disponible en leads, oportunidades y
