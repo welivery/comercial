@@ -78,6 +78,7 @@ export interface Oportunidad {
   reunion_efectiva_at: string | null // hito que cuenta al objetivo
   cierre_at: string | null // solo si estado = cierre_ganado
   perdida_motivo: string | null
+  proximo_contacto_at: string | null // "volver a llamar" — pospone el ítem en Seguimiento
 }
 
 export interface OportunidadEvento {
@@ -164,6 +165,7 @@ export interface Lead {
   prioridad: boolean // lead de campaña con prioridad de contacto (se asigna primero)
   campania: string | null // etiqueta de la campaña que le da prioridad (ej: "Entrega Domingo")
   oportunidad_id: string | null
+  proximo_contacto_at: string | null // "volver a llamar" — pospone el ítem en Seguimiento
   created_at: string
 }
 

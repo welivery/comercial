@@ -94,6 +94,8 @@ Correr en este orden si todavía no se corrieron. Salvo aviso, son **solo SQL**
     acredita la racha del vendedor que está viendo, no la suya).
 26. `oportunidades-delete-vendedor.sql` — RLS: el vendedor puede eliminar SUS
     propias oportunidades (habilita el botón "Eliminar" del detalle). Solo SQL.
+27. `seguimiento-proximo-contacto.sql` — columna `proximo_contacto_at` en leads y
+    oportunidades para "volver a llamar en X días" (posponer) en Seguimiento. Solo SQL.
 
 **Verificación:** `verificar-seguridad.sql` — consulta de solo lectura para
 confirmar que el endurecimiento de `seguridad.sql` quedó aplicado. Correr por país.

@@ -101,6 +101,7 @@ function mapOportunidad(r: any): Oportunidad {
     reunion_efectiva_at: r.reunion_efectiva_at,
     cierre_at: r.cierre_at,
     perdida_motivo: r.perdida_motivo,
+    proximo_contacto_at: r.proximo_contacto_at ?? null,
   }
 }
 
@@ -726,6 +727,7 @@ function mapLead(r: any): Lead {
     prioridad: !!r.prioridad,
     campania: r.campania ?? null,
     oportunidad_id: r.oportunidad_id ?? null,
+    proximo_contacto_at: r.proximo_contacto_at ?? null,
     created_at: r.created_at,
   }
 }
@@ -1084,6 +1086,87 @@ export async function marcarContactado(id: string, intentosActuales: number): Pr
   if (error) throw new Error(error.message)
   await sumarSeguimiento((data as { vendedor_id?: string } | null)?.vendedor_id).catch(() => {})
   return n
+}
+
+// Empresas (registro único) por id: teléfono/contacto/email para mostrar el
+// contacto en Seguimiento sin traer toda la base. Consulta acotada por ids.
+export async function fetchEmpresasContacto(
+  ids: string[]
+): Promise<Record<string, { telefono: string | null; contacto: string | null; email: string | null }>> {
+  const unicos = [...new Set(ids.filter(Boolean))]
+  if (unicos.length === 0) return {}
+  const { data, error } = await supabase
+    .from("clientes")
+    .select("id, telefono, contacto, email")
+    .in("id", unicos)
+  if (error) throw new Error(error.message)
+  const map: Record<string, { telefono: string | null; contacto: string | null; email: string | null }> = {}
+  for (const r of (data ?? []) as any[]) {
+    map[r.id] = { telefono: r.telefono ?? null, contacto: r.contacto ?? null, email: r.email ?? null }
+  }
+  return map
+}
+
+// Antepone una línea fechada a la nota de la empresa (registro único), sin pisar
+// lo anterior. Best-effort: si falla (RLS/empresa de otro), no corta el flujo.
+async function agregarNotaEmpresa(clienteId: string, linea: string): Promise<void> {
+  const { data } = await supabase.from("clientes").select("nota").eq("id", clienteId).maybeSingle()
+  const prev = ((data as { nota?: string } | null)?.nota ?? "").trim()
+  const nueva = prev ? `${linea}\n${prev}` : linea
+  await supabase.from("clientes").update({ nota: nueva }).eq("id", clienteId)
+}
+
+// Registra el resultado de un llamado de Seguimiento (lead u oportunidad):
+// - "no_atendio": suma un intento (en leads) y queda para reintentar.
+// - "hablado": deja constancia del contacto.
+// La nota (y una línea con el resultado) se guardan en la EMPRESA (registro
+// único). snoozeDias > 0 pospone el ítem (proximo_contacto_at). Siempre suma a
+// la racha/meta del día.
+export type ResultadoLlamado = "no_atendio" | "hablado"
+export async function registrarLlamado(opts: {
+  origen: "lead" | "oportunidad"
+  id: string
+  vendedorId: string
+  clienteId: string | null
+  resultado: ResultadoLlamado
+  nota?: string
+  snoozeDias?: number
+  contactosPrevios?: number
+}): Promise<void> {
+  const ahora = new Date()
+  const proximo =
+    opts.snoozeDias && opts.snoozeDias > 0
+      ? new Date(ahora.getTime() + opts.snoozeDias * 86400000).toISOString()
+      : null
+
+  if (opts.origen === "lead") {
+    const { error } = await supabase
+      .from("leads")
+      .update({
+        contactos_intentos: (opts.contactosPrevios ?? 0) + 1,
+        ultimo_contacto_at: ahora.toISOString(),
+        proximo_contacto_at: proximo,
+        updated_at: ahora.toISOString(),
+      })
+      .eq("id", opts.id)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase
+      .from("oportunidades")
+      .update({ proximo_contacto_at: proximo })
+      .eq("id", opts.id)
+    if (error) throw new Error(error.message)
+  }
+
+  if (opts.clienteId) {
+    const fecha = ahora.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" })
+    const nota = (opts.nota ?? "").trim()
+    const etiqueta = opts.resultado === "no_atendio" ? "no atendió" : "hablé"
+    const linea = `📞 ${fecha} · Llamado (${etiqueta})${nota ? `: ${nota}` : ""}`
+    await agregarNotaEmpresa(opts.clienteId, linea).catch(() => {})
+  }
+
+  await sumarSeguimiento(opts.vendedorId).catch(() => {})
 }
 
 // Edita el contacto de un lead. Registro único: el contacto (persona/email/

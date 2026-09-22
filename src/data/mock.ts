@@ -76,6 +76,7 @@ function mkOp(vid: string, i: number, s: OpSpec): Oportunidad {
     reunion_efectiva_at: idx >= 2 ? (s.efectiva ?? "2026-08-11") : null,
     cierre_at: s.estado === "cierre_ganado" ? (s.cierre ?? "2026-08-17") : null,
     perdida_motivo: s.estado === "perdido" ? (s.perdida ?? "No avanzó") : null,
+    proximo_contacto_at: null,
   }
 }
 

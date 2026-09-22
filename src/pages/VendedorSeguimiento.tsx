@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { Ban, CheckCircle2, Flame, HeartPulse, PartyPopper, Phone, PhoneOutgoing, Plus, Send, Sparkles } from "lucide-react"
+import { AlarmClock, Ban, CheckCircle2, Flame, HeartPulse, MessageCircle, PartyPopper, Phone, PhoneOff, Plus, Send, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
@@ -9,8 +9,8 @@ import { BucketChip, Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useOportunidades, useSecuencias, useSeguimientoDiario } from "@/hooks/useData"
-import { inscribir, marcarContactado, rechazarLead } from "@/data/api"
-import type { DiaSeguimiento } from "@/data/api"
+import { fetchEmpresasContacto, inscribir, registrarLlamado, rechazarLead } from "@/data/api"
+import type { DiaSeguimiento, ResultadoLlamado } from "@/data/api"
 import { msgError } from "@/lib/errors"
 import { ESTADO_LABEL, MOTIVOS_RECHAZO, fechaChile } from "@/lib/display"
 import { cn } from "@/lib/utils"
@@ -30,6 +30,7 @@ const UMBRAL_OP: Record<EstadoOportunidad, number> = {
 }
 
 type Tipo = "respondio" | "contactado" | "sin_tocar" | "op" | "en_curso"
+type Filtro = Tipo | "todos" | "pospuesto"
 
 const TIPO_META: Record<Tipo, { label: string; color: string; bg: string }> = {
   respondio: { label: "Te respondió", color: "#1E9E6A", bg: "#DFF2E9" },
@@ -38,6 +39,8 @@ const TIPO_META: Record<Tipo, { label: string; color: string; bg: string }> = {
   sin_tocar: { label: "Sin tocar", color: "#2F5BE6", bg: "#EEF3FE" },
   en_curso: { label: "En secuencia (auto)", color: "#5A6577", bg: "#F1F3F7" },
 }
+
+type EmpresaContacto = { telefono: string | null; contacto: string | null; email: string | null }
 
 interface Item {
   key: string
@@ -51,6 +54,10 @@ interface Item {
   dias: number
   importante: boolean
   telefono: string | null
+  contacto: string | null // persona de contacto (de la empresa)
+  clienteId: string | null
+  pospuesto: boolean
+  proximo: string | null // fecha "volver a llamar", si está pospuesto
 }
 
 function dias(iso?: string | null): number {
@@ -66,8 +73,22 @@ function extraerEmail(t?: string | null): string | null {
   const m = (t ?? "").match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)
   return m ? m[0] : null
 }
-// Secuencia sugerida según el tipo de seguimiento: "sin tocar" → prospección
-// (primer contacto), "contactado sin rta" → reactivación (re-contacto).
+// Links de contacto directo. Los teléfonos son celulares chilenos (+56 9…).
+function telHref(t: string): string {
+  return "tel:" + t.replace(/[^\d+]/g, "")
+}
+function waHref(t: string): string {
+  let d = t.replace(/\D/g, "")
+  if (d.startsWith("56")) { /* ya trae país */ }
+  else if (d.length === 9 && d.startsWith("9")) d = "56" + d
+  else if (d.length === 8) d = "569" + d
+  else d = "56" + d
+  return `https://wa.me/${d}`
+}
+function fmtDiaCorto(iso: string): string {
+  return new Date(iso).toLocaleDateString("es-CL", { day: "2-digit", month: "short" })
+}
+// Secuencia sugerida según el tipo de seguimiento.
 const OBJETIVO_POR_TIPO: Partial<Record<Tipo, SecuenciaObjetivo>> = {
   sin_tocar: "prospeccion",
   contactado: "reactivacion",
@@ -75,14 +96,13 @@ const OBJETIVO_POR_TIPO: Partial<Record<Tipo, SecuenciaObjetivo>> = {
 function haceDias(n: number): string {
   return n < 1 ? "hoy" : n === 1 ? "hace 1 día" : `hace ${n} días`
 }
+function pospuestoAun(iso?: string | null): boolean {
+  return !!iso && Date.parse(iso) > Date.now()
+}
 
 // ── Gamification (Etapa 3) ────────────────────────────────────────────────────
-const META_DIARIA = 5 // seguimientos por día para "cumplir" y sostener la racha
-// Fecha en zona Chile (el server sella seguimiento_diario.fecha en esa zona; usar
-// la del browser desalineaba "hoy"/racha para quien no esté en Chile).
+const META_DIARIA = 5
 const fechaLocal = fechaChile
-// Racha por días HÁBILES (lun-vie): cuenta hacia atrás desde hoy mientras cada
-// día hábil cumplió la meta. Hoy no corta la racha si todavía está en progreso.
 function calcRacha(dias: DiaSeguimiento[], meta: number): number {
   const map = new Map(dias.map((d) => [d.fecha, d.hechos]))
   const hoyStr = fechaLocal(new Date())
@@ -94,12 +114,19 @@ function calcRacha(dias: DiaSeguimiento[], meta: number): number {
       const s = fechaLocal(d)
       const hechos = map.get(s) ?? 0
       if (hechos >= meta) racha++
-      else if (s !== hoyStr) break // un día hábil pasado sin cumplir corta la racha
+      else if (s !== hoyStr) break
     }
     d.setDate(d.getDate() - 1)
   }
   return racha
 }
+
+const SNOOZE_OPTS: { d: number; label: string }[] = [
+  { d: 0, label: "Sin posponer" },
+  { d: 1, label: "Mañana" },
+  { d: 3, label: "En 3 días" },
+  { d: 7, label: "En 7 días" },
+]
 
 export function VendedorSeguimiento() {
   const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId, sinPerfil } = useVentas()
@@ -114,8 +141,6 @@ export function VendedorSeguimiento() {
   const leads = useMemo(() => leadsData ?? [], [leadsData])
   const ops = useMemo(() => opsData ?? [], [opsData])
   const seqActivas = useMemo<Secuencia[]>(() => (secuenciasData ?? []).filter((s) => s.activo), [secuenciasData])
-  // Secuencia sugerida para un tipo: la primera activa del objetivo que le
-  // corresponde; si no hay, cualquiera activa (para no bloquear el seguimiento).
   function sugeridaPara(tipo: Tipo): Secuencia | null {
     const obj = OBJETIVO_POR_TIPO[tipo]
     return seqActivas.find((s) => s.objetivo === obj) ?? seqActivas[0] ?? null
@@ -126,17 +151,49 @@ export function VendedorSeguimiento() {
     return m
   }, [inscData])
 
-  const [filtro, setFiltro] = useState<Tipo | "todos">("todos")
-  const [regContacto, setRegContacto] = useState<string | null>(null)
+  // Contacto (teléfono/persona) desde la EMPRESA (registro único), para leads y
+  // oportunidades. Se traen solo las empresas referenciadas (consulta acotada).
+  const [empresas, setEmpresas] = useState<Record<string, EmpresaContacto>>({})
+  const clienteIdsKey = useMemo(() => {
+    const ids = new Set<string>()
+    for (const l of leads) if (l.cliente_id) ids.add(l.cliente_id)
+    for (const o of ops) if (o.cliente_id) ids.add(o.cliente_id)
+    return [...ids].sort().join(",")
+  }, [leads, ops])
+  useEffect(() => {
+    const ids = clienteIdsKey ? clienteIdsKey.split(",") : []
+    if (ids.length === 0) { setEmpresas({}); return }
+    let vivo = true
+    fetchEmpresasContacto(ids).then((m) => vivo && setEmpresas(m)).catch(() => {})
+    return () => { vivo = false }
+  }, [clienteIdsKey])
 
-  // Modal "Rechazar / descartar" el lead (con motivo + nota).
+  const [filtro, setFiltro] = useState<Filtro>("todos")
+
+  // Modal "Rechazar / descartar" el lead.
   const [rechLead, setRechLead] = useState<Lead | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
   const [rechNota, setRechNota] = useState("")
   const [rechSaving, setRechSaving] = useState(false)
 
-  const items = useMemo<Item[]>(() => {
-    const out: Item[] = []
+  // Modal "Registré el llamado" (resultado + nota + posponer).
+  const [llamado, setLlamado] = useState<Item | null>(null)
+  const [llNota, setLlNota] = useState("")
+  const [llSnooze, setLlSnooze] = useState(0)
+  const [llSaving, setLlSaving] = useState<ResultadoLlamado | null>(null)
+
+  const { pendientes, pospuestos } = useMemo(() => {
+    const pend: Item[] = []
+    const posp: Item[] = []
+
+    const telDeLead = (l: Lead): string | null => {
+      const emp = l.cliente_id ? empresas[l.cliente_id] : undefined
+      return emp?.telefono ?? l.telefono ?? extraerTel(l.motivo)
+    }
+    const contactoDeLead = (l: Lead): string | null => {
+      const emp = l.cliente_id ? empresas[l.cliente_id] : undefined
+      return emp?.contacto ?? l.contacto ?? null
+    }
 
     // ── Leads (solo los sin clasificar) ──
     for (const l of leads) {
@@ -144,45 +201,58 @@ export function VendedorSeguimiento() {
       const insc = inscByLead.get(l.id)
       const respondio = !!insc && (insc.estado === "respondio" || insc.pendiente_humano)
       const enSecViva = !!insc && (insc.estado === "activa" || insc.estado === "pausada")
-      const tel = l.telefono ?? extraerTel(l.motivo)
+      const tel = telDeLead(l)
+      const contacto = contactoDeLead(l)
       const importante =
         l.bucket === "estrategico" || l.bucket === "fulfillment" || l.reconquista || l.fit >= 70
+      const base = { origen: "lead" as const, lead: l, titulo: l.nombre, importante, telefono: tel, contacto, clienteId: l.cliente_id }
+
+      // Pospuesto ("volver a llamar" a futuro): fuera de pendientes hasta la fecha.
+      if (pospuestoAun(l.proximo_contacto_at)) {
+        posp.push({
+          ...base, key: `l-${l.id}`, tipo: respondio ? "respondio" : l.contactos_intentos > 0 ? "contactado" : "sin_tocar",
+          prioridad: 0, detalle: `Volver a llamar ${fmtDiaCorto(l.proximo_contacto_at!)}`,
+          dias: dias(l.ultimo_contacto_at ?? l.created_at), pospuesto: true, proximo: l.proximo_contacto_at,
+        })
+        continue
+      }
 
       if (respondio) {
-        out.push({
-          key: `l-${l.id}`, tipo: "respondio", prioridad: 0, origen: "lead", lead: l,
-          titulo: l.nombre, detalle: "Te contestó — clasificalo a oportunidad o descartalo.",
-          dias: dias(insc?.respuesta_at ?? insc?.ultimo_envio_at), importante, telefono: tel,
-        })
+        pend.push({ ...base, key: `l-${l.id}`, tipo: "respondio", prioridad: 0,
+          detalle: "Te contestó — clasificalo a oportunidad o descartalo.",
+          dias: dias(insc?.respuesta_at ?? insc?.ultimo_envio_at), pospuesto: false, proximo: null })
       } else if (enSecViva) {
-        out.push({
-          key: `l-${l.id}`, tipo: "en_curso", prioridad: 8, origen: "lead", lead: l,
-          titulo: l.nombre, detalle: "En secuencia automática, esperando respuesta.",
-          dias: dias(insc?.ultimo_envio_at ?? l.created_at), importante, telefono: tel,
-        })
+        pend.push({ ...base, key: `l-${l.id}`, tipo: "en_curso", prioridad: 8,
+          detalle: "En secuencia automática, esperando respuesta.",
+          dias: dias(insc?.ultimo_envio_at ?? l.created_at), pospuesto: false, proximo: null })
       } else if (l.contactos_intentos > 0) {
         const d = dias(l.ultimo_contacto_at)
-        if (d < DIAS_REINTENTO) continue // contactado hace poco → todavía no toca
-        out.push({
-          key: `l-${l.id}`, tipo: "contactado", prioridad: importante ? 1 : 3, origen: "lead", lead: l,
-          titulo: l.nombre,
+        if (d < DIAS_REINTENTO) continue
+        pend.push({ ...base, key: `l-${l.id}`, tipo: "contactado", prioridad: importante ? 1 : 3,
           detalle: importante ? "Importante y sin respuesta — conviene llamar." : `${l.contactos_intentos} intento(s) sin respuesta — reintentá.`,
-          dias: d, importante, telefono: tel,
-        })
+          dias: d, pospuesto: false, proximo: null })
       } else {
         const d = dias(l.created_at)
-        out.push({
-          key: `l-${l.id}`, tipo: "sin_tocar", prioridad: importante ? 2 : d >= DIAS_ENFRIANDO ? 4 : 5, origen: "lead", lead: l,
-          titulo: l.nombre,
+        pend.push({ ...base, key: `l-${l.id}`, tipo: "sin_tocar", prioridad: importante ? 2 : d >= DIAS_ENFRIANDO ? 4 : 5,
           detalle: d >= DIAS_ENFRIANDO ? "Enfriándose — hacé el primer contacto ya." : "Todavía sin contactar — primer toque.",
-          dias: d, importante, telefono: tel,
-        })
+          dias: d, pospuesto: false, proximo: null })
       }
     }
 
     // ── Oportunidades activas (frenadas) ──
     for (const o of ops) {
       if (o.estado === "cierre_ganado" || o.estado === "perdido") continue
+      const emp = o.cliente_id ? empresas[o.cliente_id] : undefined
+      const importante = o.bucket === "estrategico" || o.bucket === "fulfillment" || o.envios_aprox >= 500
+      const base = { origen: "oportunidad" as const, op: o, titulo: o.ecommerce, importante,
+        telefono: emp?.telefono ?? null, contacto: emp?.contacto ?? null, clienteId: o.cliente_id }
+
+      if (pospuestoAun(o.proximo_contacto_at)) {
+        posp.push({ ...base, key: `o-${o.id}`, tipo: "op", prioridad: 0,
+          detalle: `Volver a llamar ${fmtDiaCorto(o.proximo_contacto_at!)}`, dias: 0, pospuesto: true, proximo: o.proximo_contacto_at })
+        continue
+      }
+
       const ref = Math.max(
         Date.parse(o.declarada_at) || 0,
         o.reunion_coordinada_at ? Date.parse(o.reunion_coordinada_at) : 0,
@@ -190,7 +260,6 @@ export function VendedorSeguimiento() {
       )
       const d = Math.max(0, Math.floor((Date.now() - ref) / 86400000))
       if (d < (UMBRAL_OP[o.estado] ?? 5)) continue
-      const importante = o.bucket === "estrategico" || o.bucket === "fulfillment" || o.envios_aprox >= 500
       const queFalta: Partial<Record<EstadoOportunidad, string>> = {
         interesado: "Sin avance — coordiná una reunión.",
         reunion_coordinada: "Reunión pendiente de concretar — reconfirmá.",
@@ -198,27 +267,27 @@ export function VendedorSeguimiento() {
         propuesta_enviada: "Propuesta sin respuesta — hacé seguimiento.",
         seguimiento: "En seguimiento hace rato — empujá al cierre.",
       }
-      out.push({
-        key: `o-${o.id}`, tipo: "op", prioridad: importante ? 1 : 2, origen: "oportunidad", op: o,
-        titulo: o.ecommerce, detalle: queFalta[o.estado] ?? "Necesita un empuje.", dias: d, importante,
-        telefono: null,
-      })
+      pend.push({ ...base, key: `o-${o.id}`, tipo: "op", prioridad: importante ? 1 : 2,
+        detalle: queFalta[o.estado] ?? "Necesita un empuje.", dias: d, pospuesto: false, proximo: null })
     }
 
-    return out.sort((a, b) => a.prioridad - b.prioridad || b.dias - a.dias)
-  }, [leads, ops, inscByLead])
+    pend.sort((a, b) => a.prioridad - b.prioridad || b.dias - a.dias)
+    posp.sort((a, b) => (a.proximo ?? "").localeCompare(b.proximo ?? ""))
+    return { pendientes: pend, pospuestos: posp }
+  }, [leads, ops, inscByLead, empresas])
 
-  const accionables = useMemo(() => items.filter((i) => i.tipo !== "en_curso"), [items])
+  const accionables = useMemo(() => pendientes.filter((i) => i.tipo !== "en_curso"), [pendientes])
   const counts = useMemo(() => {
-    const c: Record<string, number> = { todos: accionables.length }
-    for (const i of items) c[i.tipo] = (c[i.tipo] ?? 0) + 1
+    const c: Record<string, number> = { todos: accionables.length, pospuesto: pospuestos.length }
+    for (const i of pendientes) c[i.tipo] = (c[i.tipo] ?? 0) + 1
     return c
-  }, [items, accionables])
+  }, [pendientes, accionables, pospuestos])
 
-  const visibles = useMemo(
-    () => (filtro === "todos" ? accionables : items.filter((i) => i.tipo === filtro)),
-    [filtro, accionables, items]
-  )
+  const visibles = useMemo(() => {
+    if (filtro === "pospuesto") return pospuestos
+    if (filtro === "todos") return accionables
+    return pendientes.filter((i) => i.tipo === filtro)
+  }, [filtro, accionables, pendientes, pospuestos])
 
   // ── Gamification ──
   const diario = useMemo(() => diarioData ?? [], [diarioData])
@@ -229,19 +298,6 @@ export function VendedorSeguimiento() {
     ops.filter((o) => o.estado !== "cierre_ganado" && o.estado !== "perdido").length
   const abandonados = useMemo(() => accionables.filter((i) => i.dias >= 7).length, [accionables])
   const salud = cartera ? Math.round(((cartera - abandonados) / cartera) * 100) : 100
-
-  async function registrarContacto(l: Lead) {
-    setRegContacto(l.id)
-    try {
-      await marcarContactado(l.id, l.contactos_intentos)
-      reload()
-      reloadDiario()
-    } catch (e) {
-      toast.error(msgError(e, "No se pudo registrar"))
-    } finally {
-      setRegContacto(null)
-    }
-  }
 
   function abrirRechazo(l: Lead) {
     setRechLead(l)
@@ -267,8 +323,6 @@ export function VendedorSeguimiento() {
   }
 
   const [siguiendo, setSiguiendo] = useState<string | null>(null)
-  // Un click: inscribe al lead en la secuencia sugerida (seguimiento automático).
-  // Si no tiene email cargado, manda a Leads a completarlo (modal de inscripción).
   async function hacerSeguimiento(l: Lead, tipo: Tipo) {
     const seq = sugeridaPara(tipo)
     if (!seq) {
@@ -301,13 +355,48 @@ export function VendedorSeguimiento() {
     }
   }
 
-  const CHIPS: { k: Tipo | "todos"; label: string }[] = [
+  // ── Registro del llamado ──
+  function abrirLlamado(it: Item) {
+    setLlamado(it)
+    setLlNota("")
+    setLlSnooze(0)
+    setLlSaving(null)
+  }
+  async function guardarLlamado(resultado: ResultadoLlamado) {
+    if (!llamado) return
+    setLlSaving(resultado)
+    try {
+      await registrarLlamado({
+        origen: llamado.origen,
+        id: llamado.lead?.id ?? llamado.op!.id,
+        vendedorId: vendedor.id,
+        clienteId: llamado.clienteId,
+        resultado,
+        nota: llNota,
+        snoozeDias: llSnooze,
+        contactosPrevios: llamado.lead?.contactos_intentos ?? 0,
+      })
+      const nom = llamado.titulo
+      setLlamado(null)
+      reload()
+      reloadDiario()
+      toast.ok(
+        `Llamado registrado — ${nom}${llSnooze > 0 ? ` · vuelve ${SNOOZE_OPTS.find((s) => s.d === llSnooze)?.label.toLowerCase()}` : ""}.`
+      )
+    } catch (e) {
+      toast.error(msgError(e, "No se pudo registrar el llamado"))
+      setLlSaving(null)
+    }
+  }
+
+  const CHIPS: { k: Filtro; label: string }[] = [
     { k: "todos", label: "Todo pendiente" },
     { k: "respondio", label: "🔥 Te respondió" },
     { k: "op", label: "Oportunidad frenada" },
     { k: "contactado", label: "Contactado sin rta" },
     { k: "sin_tocar", label: "Sin tocar" },
     { k: "en_curso", label: "En secuencia" },
+    { k: "pospuesto", label: "⏰ Pospuestos" },
   ]
 
   if (sinPerfil) {
@@ -343,12 +432,11 @@ export function VendedorSeguimiento() {
       {loading ? (
         <Cargando que="tu seguimiento" />
       ) : error ? (
-        // Sin esto, un fallo de carga mostraba "¡Bandeja en cero!" (falso al día).
         <ErrorMsg msg={error} />
       ) : (
         <>
           <GameBar racha={racha} hoy={hoyHechos} meta={META_DIARIA} salud={salud} cartera={cartera} />
-          {accionables.length === 0 ? (
+          {accionables.length === 0 && pospuestos.length === 0 ? (
             <Card className="mt-4 flex flex-col items-center p-10 text-center">
               <span className="grid size-14 place-items-center rounded-2xl bg-[#DFF2E9]">
                 <PartyPopper size={26} className="text-success" />
@@ -362,180 +450,177 @@ export function VendedorSeguimiento() {
             </Card>
           ) : (
             <>
-          {/* Resumen / game */}
-          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-gradient-to-br from-navy via-[#1d3a6b] to-[#123f52] p-4 text-white">
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-mint/20">
-              <Flame size={22} className="text-mint" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold">
-                Tenés {accionables.length} seguimiento{accionables.length === 1 ? "" : "s"} para hacer
-              </div>
-              <p className="mt-0.5 text-[12.5px] text-[#c6d0e0]">
-                Trabajá de arriba hacia abajo hasta dejar la bandeja en cero. Los{" "}
-                <b className="text-white">🔥 importantes</b> primero.
-              </p>
-            </div>
-            {counts["respondio"] > 0 && (
-              <div className="rounded-lg bg-white/10 px-3 py-1.5 text-center">
-                <div className="text-[18px] font-semibold text-mint">{counts["respondio"]}</div>
-                <div className="text-[10px] uppercase tracking-wide text-[#c6d0e0]">te respondieron</div>
-              </div>
-            )}
-          </div>
-
-          {/* Filtros por tipo */}
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            {CHIPS.filter((c) => c.k === "todos" || (counts[c.k] ?? 0) > 0).map((c) => (
-              <button
-                key={c.k}
-                onClick={() => setFiltro(c.k)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
-                  filtro === c.k ? "border-navy bg-navy text-white" : "border-border bg-white text-slate hover:text-ink"
+              {/* Resumen / game */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl bg-gradient-to-br from-navy via-[#1d3a6b] to-[#123f52] p-4 text-white">
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-mint/20">
+                  <Flame size={22} className="text-mint" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[15px] font-semibold">
+                    Tenés {accionables.length} seguimiento{accionables.length === 1 ? "" : "s"} para hacer
+                  </div>
+                  <p className="mt-0.5 text-[12.5px] text-[#c6d0e0]">
+                    Llamá, marcá el resultado y pasá al siguiente. Los <b className="text-white">🔥 importantes</b> primero.
+                  </p>
+                </div>
+                {counts["respondio"] > 0 && (
+                  <div className="rounded-lg bg-white/10 px-3 py-1.5 text-center">
+                    <div className="text-[18px] font-semibold text-mint">{counts["respondio"]}</div>
+                    <div className="text-[10px] uppercase tracking-wide text-[#c6d0e0]">te respondieron</div>
+                  </div>
                 )}
-              >
-                {c.label} <span className="tabular-nums opacity-70">{counts[c.k] ?? 0}</span>
-              </button>
-            ))}
-          </div>
+              </div>
 
-          {/* Lista */}
-          <div className="mt-3 flex flex-col gap-2.5">
-            {visibles.map((it) => {
-              const meta = TIPO_META[it.tipo]
-              const l = it.lead
-              const o = it.op
-              return (
-                <Card
-                  key={it.key}
-                  className={cn(
-                    "flex flex-wrap items-center gap-3 p-3.5",
-                    it.importante && it.tipo !== "en_curso" && "ring-1 ring-coral/40"
-                  )}
-                >
-                  <VAvatar iniciales={(it.titulo || "—").slice(0, 2).toUpperCase()} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[13.5px] font-semibold text-ink">{it.titulo}</span>
-                      {l && <BucketChip bucket={l.bucket} short />}
-                      {o && <BucketChip bucket={o.bucket} short />}
-                      <span
-                        className="rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
-                        style={{ background: meta.bg, color: meta.color }}
-                      >
-                        {it.tipo === "op" ? ESTADO_LABEL[o!.estado] : meta.label}
-                      </span>
-                      {it.importante && it.tipo !== "en_curso" && (
-                        <span className="rounded-full bg-[#FDE7E1] px-1.5 py-0.5 text-[10.5px] font-semibold text-coral">
-                          🔥 Importante
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-slate">
-                      <span>{it.detalle}</span>
-                      <span className="text-muted">· {haceDias(it.dias)}</span>
-                    </div>
-                    {/* Recomendación de llamada en importantes con teléfono */}
-                    {it.importante && it.telefono && (it.tipo === "contactado" || it.tipo === "respondio") && (
-                      <a
-                        href={`tel:${it.telefono.replace(/\s/g, "")}`}
-                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-[#FDE7E1] px-2 py-1 text-[12px] font-semibold text-coral hover:bg-[#fbd9cf]"
-                      >
-                        <Phone size={13} /> Llamá ahora — {it.telefono}
-                      </a>
+              {/* Filtros por tipo */}
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {CHIPS.filter((c) => c.k === "todos" || (counts[c.k] ?? 0) > 0).map((c) => (
+                  <button
+                    key={c.k}
+                    onClick={() => setFiltro(c.k)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                      filtro === c.k ? "border-navy bg-navy text-white" : "border-border bg-white text-slate hover:text-ink"
                     )}
-                  </div>
+                  >
+                    {c.label} <span className="tabular-nums opacity-70">{counts[c.k] ?? 0}</span>
+                  </button>
+                ))}
+              </div>
 
-                  {/* Acciones según el tipo */}
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                    {o ? (
-                      <Button size="sm" variant="blue" onClick={() => navigate(`/pipeline/${o.id}`)}>
-                        Abrir ficha
-                      </Button>
-                    ) : l ? (
-                      <>
-                        {it.tipo === "respondio" ? (
-                          <>
-                            <Button size="sm" variant="blue" onClick={() => navigate(`/leads?convertir=${l.id}`)}>
-                              <Plus /> A oportunidad
-                            </Button>
-                            <Button size="sm" variant="outline" onClick={() => navigate("/secuencias")}>
-                              Ver charla
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            {it.telefono && (
-                              <a
-                                href={`tel:${it.telefono.replace(/\s/g, "")}`}
-                                title="Llamar"
-                                className="grid size-8 place-items-center rounded-md text-slate hover:bg-mist"
-                              >
-                                <Phone size={15} />
-                              </a>
-                            )}
-                            <button
-                              onClick={() => registrarContacto(l)}
-                              disabled={regContacto === l.id}
-                              title="Registrar contacto (sin respuesta)"
-                              className="grid size-8 place-items-center rounded-md text-[#a5741a] hover:bg-[#FCF3E2] disabled:opacity-50"
-                            >
-                              <PhoneOutgoing size={15} />
-                            </button>
-                            {(it.tipo === "sin_tocar" || it.tipo === "contactado") && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={siguiendo === l.id}
-                                title={
-                                  sugeridaPara(it.tipo)
-                                    ? `Seguimiento automático · secuencia “${sugeridaPara(it.tipo)!.nombre}”`
-                                    : "Configurá una secuencia activa"
-                                }
-                                onClick={() => hacerSeguimiento(l, it.tipo)}
-                              >
-                                <Send /> {siguiendo === l.id ? "Poniendo…" : "Hacer seguimiento"}
-                              </Button>
-                            )}
-                            <Button size="sm" variant="blue" onClick={() => navigate(`/leads?convertir=${l.id}`)}>
-                              <Plus /> Oportunidad
-                            </Button>
-                          </>
-                        )}
-                        <button
-                          onClick={() => abrirRechazo(l)}
-                          title="Rechazar / descartar (no contesta, no le interesa…)"
-                          className="grid size-8 place-items-center rounded-md text-slate hover:bg-[#FBE2E2] hover:text-error"
-                        >
-                          <Ban size={15} />
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </Card>
-              )
-            })}
-          </div>
+              {/* Lista */}
+              <div className="mt-3 flex flex-col gap-2.5">
+                {visibles.map((it) => (
+                  <FilaSeguimiento
+                    key={it.key}
+                    it={it}
+                    siguiendo={siguiendo === it.lead?.id}
+                    onLlamado={() => abrirLlamado(it)}
+                    onOportunidad={() => it.lead && navigate(`/leads?convertir=${it.lead.id}`)}
+                    onVerCharla={() => navigate("/secuencias")}
+                    onSecuencia={() => it.lead && hacerSeguimiento(it.lead, it.tipo)}
+                    onRechazar={() => it.lead && abrirRechazo(it.lead)}
+                    onFicha={() => it.op && navigate(`/pipeline/${it.op.id}`)}
+                  />
+                ))}
+                {visibles.length === 0 && (
+                  <Card className="flex items-center gap-2 p-4 text-[13px] text-slate">
+                    <CheckCircle2 size={16} className="text-success" />
+                    {filtro === "en_curso"
+                      ? "No hay nada corriendo en secuencia ahora."
+                      : filtro === "pospuesto"
+                        ? "No tenés seguimientos pospuestos."
+                        : "Nada en este filtro."}
+                  </Card>
+                )}
+              </div>
 
-          {/* En secuencia (automático) — visible solo con su filtro, tranquilizador */}
-          {filtro === "en_curso" && visibles.length === 0 && (
-            <Card className="mt-2 flex items-center gap-2 p-4 text-[13px] text-slate">
-              <CheckCircle2 size={16} className="text-success" /> No hay nada corriendo en secuencia ahora.
-            </Card>
-          )}
-
-          <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
-            <Sparkles size={16} className="mt-0.5 shrink-0 text-blue" />
-            <p className="leading-relaxed">
-              El objetivo es simple: <b className="text-ink">cerrar cada lead</b> — avanzándolo a oportunidad o
-              descartándolo con motivo. Nada debería quedarse sin próximo paso.
-            </p>
-          </div>
+              <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-dashed border-border p-3.5 text-[12px] text-slate">
+                <Sparkles size={16} className="mt-0.5 shrink-0 text-blue" />
+                <p className="leading-relaxed">
+                  El objetivo es simple: <b className="text-ink">cerrar cada lead</b> — llamalo, marcá qué pasó, y
+                  avanzalo a oportunidad, ponelo en seguimiento o descartalo. Nada debería quedarse sin próximo paso.
+                </p>
+              </div>
             </>
           )}
         </>
       )}
+
+      {/* Modal: registrar el resultado del llamado */}
+      <Modal open={!!llamado} onClose={() => setLlamado(null)} title="Registrar llamado">
+        {llamado && (
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center gap-2.5 rounded-lg bg-mist/70 px-3 py-2.5">
+              <VAvatar iniciales={(llamado.titulo || "—").slice(0, 2).toUpperCase()} />
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-semibold text-ink">{llamado.titulo}</div>
+                {llamado.contacto && <div className="text-[12px] text-slate">{llamado.contacto}</div>}
+              </div>
+            </div>
+
+            {llamado.telefono ? (
+              <div className="flex flex-wrap gap-2">
+                <a href={telHref(llamado.telefono)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue px-3 py-2.5 text-[13px] font-semibold text-white hover:bg-blue/90">
+                  <Phone size={15} /> Llamar {llamado.telefono}
+                </a>
+                <a href={waHref(llamado.telefono)} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-2.5 text-[13px] font-semibold text-white hover:opacity-90">
+                  <MessageCircle size={15} /> WhatsApp
+                </a>
+              </div>
+            ) : (
+              <p className="rounded-lg bg-[#FCF3E2] px-3 py-2 text-[12px] text-[#8a6416]">
+                Sin teléfono cargado. Podés agregarlo en la ficha de la empresa (Base de clientes).
+              </p>
+            )}
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[12px] font-medium text-slate">¿Qué pasó? (nota, opcional)</span>
+              <textarea
+                value={llNota}
+                onChange={(e) => setLlNota(e.target.value)}
+                className="min-h-[64px] w-full resize-y rounded-lg border border-input px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+                placeholder="Ej: quedó en confirmar el jueves · pidió propuesta por mail · no atiende…"
+              />
+            </label>
+
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate">
+                <AlarmClock size={13} /> Volver a llamar
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {SNOOZE_OPTS.map((s) => (
+                  <button
+                    key={s.d}
+                    onClick={() => setLlSnooze(s.d)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors",
+                      llSnooze === s.d ? "border-navy bg-navy text-white" : "border-border bg-white text-slate hover:text-ink"
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Resultado del llamado */}
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <Button variant="outline" disabled={!!llSaving} onClick={() => guardarLlamado("no_atendio")}>
+                <PhoneOff /> {llSaving === "no_atendio" ? "Guardando…" : "No atendió"}
+              </Button>
+              <Button variant="blue" disabled={!!llSaving} onClick={() => guardarLlamado("hablado")}>
+                <Phone /> {llSaving === "hablado" ? "Guardando…" : "Hablé"}
+              </Button>
+            </div>
+
+            {/* Próximo paso (delegado a los flujos existentes) */}
+            <div className="border-t border-border pt-3">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate">Próximo paso</div>
+              <div className="flex flex-wrap gap-2">
+                {llamado.origen === "lead" ? (
+                  <>
+                    <Button size="sm" variant="blue" onClick={() => { const l = llamado.lead!; setLlamado(null); navigate(`/leads?convertir=${l.id}`) }}>
+                      <Plus /> A oportunidad
+                    </Button>
+                    {(llamado.tipo === "sin_tocar" || llamado.tipo === "contactado") && (
+                      <Button size="sm" variant="outline" disabled={siguiendo === llamado.lead?.id} onClick={() => { const l = llamado.lead!; const t = llamado.tipo; setLlamado(null); hacerSeguimiento(l, t) }}>
+                        <Send /> Poner en secuencia
+                      </Button>
+                    )}
+                    <Button size="sm" variant="outline" className="text-error hover:bg-[#FBE2E2] hover:text-error" onClick={() => { const l = llamado.lead!; setLlamado(null); abrirRechazo(l) }}>
+                      <Ban /> No le interesa
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="blue" onClick={() => { const o = llamado.op!; setLlamado(null); navigate(`/pipeline/${o.id}`) }}>
+                    Abrir ficha
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Modal: rechazar / descartar el lead con motivo */}
       <Modal open={!!rechLead} onClose={() => setRechLead(null)} title="Rechazar lead">
@@ -581,6 +666,133 @@ export function VendedorSeguimiento() {
   )
 }
 
+// ── Fila de un ítem de seguimiento ────────────────────────────────────────────
+function FilaSeguimiento({
+  it,
+  siguiendo,
+  onLlamado,
+  onOportunidad,
+  onVerCharla,
+  onSecuencia,
+  onRechazar,
+  onFicha,
+}: {
+  it: Item
+  siguiendo: boolean
+  onLlamado: () => void
+  onOportunidad: () => void
+  onVerCharla: () => void
+  onSecuencia: () => void
+  onRechazar: () => void
+  onFicha: () => void
+}) {
+  const meta = TIPO_META[it.tipo]
+  return (
+    <Card
+      className={cn(
+        "flex flex-wrap items-center gap-3 p-3.5",
+        it.pospuesto && "opacity-80",
+        it.importante && it.tipo !== "en_curso" && !it.pospuesto && "ring-1 ring-coral/40"
+      )}
+    >
+      <VAvatar iniciales={(it.titulo || "—").slice(0, 2).toUpperCase()} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[13.5px] font-semibold text-ink">{it.titulo}</span>
+          {it.lead && <BucketChip bucket={it.lead.bucket} short />}
+          {it.op && <BucketChip bucket={it.op.bucket} short />}
+          <span className="rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold" style={{ background: meta.bg, color: meta.color }}>
+            {it.tipo === "op" && it.op ? ESTADO_LABEL[it.op.estado] : meta.label}
+          </span>
+          {it.importante && it.tipo !== "en_curso" && (
+            <span className="rounded-full bg-[#FDE7E1] px-1.5 py-0.5 text-[10.5px] font-semibold text-coral">🔥 Importante</span>
+          )}
+          {it.pospuesto && it.proximo && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#EEF3FE] px-1.5 py-0.5 text-[10.5px] font-semibold text-blue">
+              <AlarmClock size={10} /> {fmtDiaCorto(it.proximo)}
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-slate">
+          <span>{it.detalle}</span>
+          {!it.pospuesto && <span className="text-muted">· {haceDias(it.dias)}</span>}
+        </div>
+
+        {/* Línea de contacto: teléfono SIEMPRE visible, con llamar + WhatsApp */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {it.telefono ? (
+            <>
+              <a
+                href={telHref(it.telefono)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-[#EEF3FE] px-2 py-1 text-[12px] font-semibold text-blue hover:bg-[#e0e9fd]"
+              >
+                <Phone size={13} /> {it.telefono}
+              </a>
+              <a
+                href={waHref(it.telefono)}
+                target="_blank"
+                rel="noreferrer"
+                title="Escribir por WhatsApp"
+                className="inline-flex items-center gap-1 rounded-md bg-[#E4F7EC] px-2 py-1 text-[12px] font-semibold text-[#1a7a4d] hover:bg-[#d5f0e0]"
+              >
+                <MessageCircle size={13} /> WhatsApp
+              </a>
+              {it.contacto && <span className="text-[11.5px] text-slate">· {it.contacto}</span>}
+            </>
+          ) : (
+            <span className="text-[11.5px] text-muted">Sin teléfono cargado</span>
+          )}
+        </div>
+      </div>
+
+      {/* Acciones */}
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        {it.tipo === "respondio" ? (
+          <>
+            <Button size="sm" variant="blue" onClick={onOportunidad}>
+              <Plus /> A oportunidad
+            </Button>
+            <Button size="sm" variant="outline" onClick={onVerCharla}>
+              Ver charla
+            </Button>
+          </>
+        ) : it.origen === "oportunidad" ? (
+          <>
+            <Button size="sm" variant="outline" onClick={onLlamado}>
+              <Phone /> Registré llamado
+            </Button>
+            <Button size="sm" variant="blue" onClick={onFicha}>
+              Abrir ficha
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button size="sm" variant="blue" onClick={onLlamado}>
+              <Phone /> Registré llamado
+            </Button>
+            {it.tipo !== "en_curso" && (
+              <>
+                {(it.tipo === "sin_tocar" || it.tipo === "contactado") && (
+                  <Button size="sm" variant="outline" disabled={siguiendo} title="Seguimiento automático por email" onClick={onSecuencia}>
+                    <Send /> {siguiendo ? "Poniendo…" : "Secuencia"}
+                  </Button>
+                )}
+                <button
+                  onClick={onRechazar}
+                  title="Rechazar / descartar"
+                  className="grid size-8 place-items-center rounded-md text-slate hover:bg-[#FBE2E2] hover:text-error"
+                >
+                  <Ban size={15} />
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 // Barra de "juego": racha, seguimientos de hoy y salud de la cartera.
 function GameBar({
   racha,
@@ -623,10 +835,7 @@ function GameBar({
       </Card>
 
       <Card className="flex items-center gap-3 p-3.5">
-        <span
-          className="grid size-10 shrink-0 place-items-center rounded-xl"
-          style={{ background: saludColor + "1F" }}
-        >
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl" style={{ background: saludColor + "1F" }}>
           <HeartPulse size={20} style={{ color: saludColor }} />
         </span>
         <div className="min-w-0">
