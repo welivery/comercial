@@ -162,7 +162,6 @@ export function VendedorLeads() {
   const [estadoFiltro, setEstadoFiltro] = usePersistedState<LeadEstado | "todos">("leads.estado", "nuevo")
   const [periodo, setPeriodo] = usePersistedState("leads.periodo", "todo")
   const [secFiltro, setSecFiltro] = usePersistedState<"todos" | "en_sec" | "sin_sec">("leads.sec", "todos")
-  const [contFiltro, setContFiltro] = usePersistedState<"todos" | "contactados" | "sin_contactar">("leads.cont", "todos")
   const [campFiltro, setCampFiltro] = usePersistedState<string>("leads.camp", "todas") // "todas" | "sin" | nombre de campaña
   // Orden por columna (al tocar el título). null = orden por defecto (prioridad + reciente).
   const [sortCol, setSortCol] = usePersistedState<null | "empresa" | "email" | "telefono" | "origen">("leads.sortCol", null)
@@ -187,7 +186,7 @@ export function VendedorLeads() {
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [asignarA, setAsignarA] = useState("")
   const [asignando, setAsignando] = useState(false)
-  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro, contFiltro, campFiltro])
+  useEffect(() => setSel(new Set()), [estadoFiltro, periodo, secFiltro, campFiltro])
 
   const [rechId, setRechId] = useState<string | null>(null)
   const [rechMotivo, setRechMotivo] = useState<MotivoRechazo>("no_interesado")
@@ -234,17 +233,18 @@ export function VendedorLeads() {
   const { kpi, visibles } = useMemo(() => {
     const desde = cutoff(periodo)
     const enRango = leads.filter((l) => !desde || new Date(l.created_at).getTime() >= desde)
-    const nuevos = enRango.filter((l) => l.estado === "nuevo").length
+    // Un lead "tocado" (ya contactado, en secuencia o pospuesto) sale del embudo
+    // de Buscar leads y se trabaja en Seguimiento. Acá "Sin clasificar" = SIN TOCAR.
+    const pospuesto = (iso?: string | null) => !!iso && Date.parse(iso) > Date.now()
+    const tocado = (l: Lead) => l.contactos_intentos > 0 || enSecuencia(l.id) || pospuesto(l.proximo_contacto_at)
+    const nuevos = enRango.filter((l) => l.estado === "nuevo" && !tocado(l)).length
     const conv = enRango.filter((l) => l.estado === "convertido").length
     const rech = enRango.filter((l) => l.estado === "rechazado").length
     const filtrada = enRango
       .filter((l) => estadoFiltro === "todos" || l.estado === estadoFiltro)
+      // En "Sin clasificar" mostramos solo los SIN TOCAR (los tocados están en Seguimiento).
+      .filter((l) => estadoFiltro !== "nuevo" || !tocado(l))
       .filter((l) => secFiltro === "todos" || (secFiltro === "en_sec" ? enSecuencia(l.id) : !enSecuencia(l.id)))
-      .filter(
-        (l) =>
-          contFiltro === "todos" ||
-          (contFiltro === "contactados" ? l.contactos_intentos > 0 : l.contactos_intentos === 0)
-      )
       .filter((l) => campFiltro === "todas" || (campFiltro === "sin" ? !l.campania : l.campania === campFiltro))
     // Valor por columna para ordenar al tocar el título.
     const val = (l: Lead): string => {
@@ -268,7 +268,7 @@ export function VendedorLeads() {
       kpi: { traidos: enRango.length, nuevos, conv, rech, pct: enRango.length ? Math.round((conv / enRango.length) * 100) : 0 },
       visibles: lista,
     }
-  }, [leads, periodo, estadoFiltro, secFiltro, contFiltro, campFiltro, sortCol, sortDir, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [leads, periodo, estadoFiltro, secFiltro, campFiltro, sortCol, sortDir, inscByLead]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Campañas presentes en los leads (para el filtro de campaña).
   const campaniasDisp = useMemo(
@@ -757,18 +757,9 @@ export function VendedorLeads() {
               ))}
             </div>
             <select
-              value={contFiltro}
-              onChange={(ev) => setContFiltro(ev.target.value as typeof contFiltro)}
-              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
-            >
-              <option value="todos">Contacto: todos</option>
-              <option value="contactados">Ya contactados (sin rta)</option>
-              <option value="sin_contactar">Sin contactar</option>
-            </select>
-            <select
               value={secFiltro}
               onChange={(ev) => setSecFiltro(ev.target.value as typeof secFiltro)}
-              className="rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
+              className="ml-auto rounded-lg border border-input bg-white px-3 py-2 text-[12.5px] font-medium text-ink outline-none focus:border-blue"
             >
               <option value="todos">Secuencia: todos</option>
               <option value="en_sec">En secuencia</option>
@@ -846,12 +837,18 @@ export function VendedorLeads() {
                 <Sparkles size={20} className="text-blue" />
               </span>
               <p className="mt-3 text-[14px] font-semibold text-navy">
-                {estadoFiltro === "nuevo" ? "No tenés leads sin clasificar" : "Nada en este filtro"}
+                {estadoFiltro === "nuevo" ? "No tenés leads nuevos sin contactar" : "Nada en este filtro"}
               </p>
-              <p className="mx-auto mt-1 max-w-[52ch] text-[13px] text-slate">
-                {estadoFiltro === "nuevo"
-                  ? "Usá “Traer de mi base” (gratis) o “Buscar con IA” para sumar potenciales."
-                  : "Probá cambiar el estado o el período del filtro."}
+              <p className="mx-auto mt-1 max-w-[54ch] text-[13px] text-slate">
+                {estadoFiltro === "nuevo" ? (
+                  <>
+                    Los que ya contactaste o pusiste en secuencia se trabajan en{" "}
+                    <Link to="/seguimiento" className="font-medium text-blue underline">Seguimiento</Link>.
+                    Para sumar nuevos, usá “Traer de mi base” (gratis) o “Buscar con IA”.
+                  </>
+                ) : (
+                  "Probá cambiar el estado o el período del filtro."
+                )}
               </p>
             </Card>
           ) : (
