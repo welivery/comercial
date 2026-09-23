@@ -4,10 +4,11 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PageHead } from "@/components/PageHead"
 import { Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
-import { useObjetivos, useVendedores } from "@/hooks/useData"
+import { useConfigReciclado, useObjetivos, useVendedores } from "@/hooks/useData"
 import {
   eliminarSegmento,
   fetchSegmentos,
+  guardarConfigReciclado,
   guardarObjetivo,
   guardarSegmento,
 } from "@/data/api"
@@ -365,6 +366,99 @@ function ObjetivoEditor({
   )
 }
 
+// Reglas del embudo (reciclado de leads fríos), configurables por el admin.
+function ReglasEmbudoEditor() {
+  const { data, loading } = useConfigReciclado()
+  const [min, setMin] = useState(5)
+  const [dias, setDias] = useState(15)
+  const [meses, setMeses] = useState("1, 2, 3")
+  const [guardando, setGuardando] = useState(false)
+  const [guardado, setGuardado] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (data) {
+      setMin(data.min_contactos)
+      setDias(data.ventana_dias)
+      setMeses(data.meses.join(", "))
+    }
+  }, [data])
+
+  async function guardar() {
+    setGuardando(true)
+    setErr(null)
+    try {
+      const mesesArr = meses
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0)
+      await guardarConfigReciclado({
+        min_contactos: Math.max(1, min || 1),
+        ventana_dias: Math.max(1, dias || 1),
+        meses: mesesArr.length ? mesesArr : [1, 2, 3],
+      })
+      setGuardado(true)
+      setTimeout(() => setGuardado(false), 2500)
+    } catch (e) {
+      setErr(msgError(e, "No se pudo guardar"))
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  if (loading) return null
+
+  return (
+    <Card className="mb-4 p-[18px]">
+      <div className="mb-1 flex items-center gap-2">
+        <h2 className="text-[15px] font-semibold text-navy">Reglas del embudo</h2>
+        <span className="rounded-md bg-[#FCF7EC] px-2 py-0.5 text-[11px] font-medium text-[#a5741a]">Reciclado</span>
+      </div>
+      <p className="mb-3.5 text-xs text-slate">
+        Cuándo Seguimiento sugiere reagendar o dejar de contactar un lead que no responde.
+      </p>
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[11.5px] font-medium text-slate">Contactos sin respuesta</span>
+          <input
+            type="number"
+            min={1}
+            value={min}
+            onChange={(e) => setMin(Number(e.target.value))}
+            className="w-[110px] rounded-lg border border-input bg-white px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[11.5px] font-medium text-slate">Dentro de (días)</span>
+          <input
+            type="number"
+            min={1}
+            value={dias}
+            onChange={(e) => setDias(Number(e.target.value))}
+            className="w-[110px] rounded-lg border border-input bg-white px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[11.5px] font-medium text-slate">Reagendar (meses, separados por coma)</span>
+          <input
+            value={meses}
+            onChange={(e) => setMeses(e.target.value)}
+            placeholder="1, 2, 3"
+            className="w-[200px] rounded-lg border border-input bg-white px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
+          />
+        </label>
+        <Button variant={guardado ? "outline" : "blue"} disabled={guardando} onClick={guardar}>
+          <Check /> {guardando ? "Guardando…" : guardado ? "Guardado" : "Guardar"}
+        </Button>
+      </div>
+      <p className="mt-2.5 text-[11.5px] text-slate">
+        Ej: “{min} contactos en {dias} días” → el sistema propone reagendar {meses || "1, 2, 3"} meses o no contactar.
+      </p>
+      {err && <div className="mt-2 rounded-lg bg-[#FBE2E2] px-3 py-2 text-[12.5px] text-error">{err}</div>}
+    </Card>
+  )
+}
+
 export function AdminObjetivos() {
   const { data: vendedores, loading, error } = useVendedores()
   const { data: objetivos, loading: loadingObj, reload: reloadObj } = useObjetivos(PERIODO_ACTUAL)
@@ -388,6 +482,8 @@ export function AdminObjetivos() {
       />
 
       <SegmentosEditor onCambio={reloadObj} />
+
+      <ReglasEmbudoEditor />
 
       {vends.length === 0 ? (
         <Card className="p-8 text-center text-[13px] text-slate">

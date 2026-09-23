@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react"
 import {
   fetchCliente,
   fetchClientes,
+  fetchConfigReciclado,
   fetchConfigSecuencias,
   fetchContexto,
   fetchCreditosLeads,
@@ -93,4 +94,5 @@ export const useInscripcionesEquipo = () => useAsync(() => fetchInscripcionesEqu
 export const useEmailCuenta = (vendedorId: string | undefined) =>
   useAsync(() => (vendedorId ? fetchEmailCuenta(vendedorId) : Promise.resolve(null)), [vendedorId])
 export const useConfigSecuencias = () => useAsync(() => fetchConfigSecuencias(), [])
+export const useConfigReciclado = () => useAsync(() => fetchConfigReciclado(), [])
 export const useSecuenciasCompartidas = () => useAsync(() => fetchSecuenciasCompartidas(), [])

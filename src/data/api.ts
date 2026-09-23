@@ -7,6 +7,7 @@ import { iniciales } from "@/lib/display"
 import type {
   Bucket,
   Cliente,
+  ConfigReciclado,
   ConfigSecuencias,
   ContextoIA,
   CreditosLeads,
@@ -1793,6 +1794,39 @@ export async function guardarConfigSecuencias(c: ConfigSecuencias): Promise<void
       seguimiento_auto_activo: c.seg_auto_activo,
       seguimiento_auto_dias: c.seg_auto_dias,
       seguimiento_auto_secuencia_id: c.seg_auto_secuencia_id,
+    })
+    .eq("id", 1)
+  if (error) throw new Error(error.message)
+}
+
+// ─────────────── Reglas del embudo: reciclado (config org-wide) ───────────────
+function parseMeses(csv: string | null | undefined): number[] {
+  const arr = (csv ?? "")
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return arr.length ? arr : [1, 2, 3]
+}
+export async function fetchConfigReciclado(): Promise<ConfigReciclado> {
+  const { data, error } = await supabase
+    .from("config_ventas")
+    .select("reciclar_min_contactos, reciclar_ventana_dias, reciclar_meses")
+    .eq("id", 1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  return {
+    min_contactos: data?.reciclar_min_contactos ?? 5,
+    ventana_dias: data?.reciclar_ventana_dias ?? 15,
+    meses: parseMeses(data?.reciclar_meses),
+  }
+}
+export async function guardarConfigReciclado(c: ConfigReciclado): Promise<void> {
+  const { error } = await supabase
+    .from("config_ventas")
+    .update({
+      reciclar_min_contactos: c.min_contactos,
+      reciclar_ventana_dias: c.ventana_dias,
+      reciclar_meses: c.meses.join(","),
     })
     .eq("id", 1)
   if (error) throw new Error(error.message)

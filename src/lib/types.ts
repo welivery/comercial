@@ -255,6 +255,13 @@ export interface ConfigSecuencias {
   seg_auto_secuencia_id: string | null
 }
 
+// Reglas del embudo: reciclado de leads fríos (org-wide, en config_ventas).
+export interface ConfigReciclado {
+  min_contactos: number // contactos sin respuesta que disparan la sugerencia
+  ventana_dias: number // dentro de cuántos días se cuentan esos contactos
+  meses: number[] // opciones de reagenda (en meses) que se ofrecen
+}
+
 // Casilla de email conectada por el vendedor (OAuth Google). El refresh_token
 // vive solo del lado servidor; el front nunca lo lee.
 export interface EmailCuenta {

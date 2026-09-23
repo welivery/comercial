@@ -100,6 +100,9 @@ Correr en este orden si todavía no se corrieron. Salvo aviso, son **solo SQL**
     tipo/resultado/nota) + RLS. Base del funnel Buscar leads → Seguimiento. Solo SQL.
 29. `leads-reciclado.sql` — columna `reciclado_at` en leads (marca de reintento
     para el reciclado de leads fríos: 5 contactos sin respuesta en 15 días). Solo SQL.
+30. `reciclado-config.sql` — umbrales del reciclado en `config_ventas`
+    (min contactos / ventana días / meses de reagenda), editables por el admin en
+    Objetivos → "Reglas del embudo". Solo SQL.
 
 **Verificación:** `verificar-seguridad.sql` — consulta de solo lectura para
 confirmar que el endurecimiento de `seguridad.sql` quedó aplicado. Correr por país.
