@@ -21,7 +21,6 @@ import type { EstadoOportunidad, Lead, MotivoRechazo, Oportunidad, Secuencia, Se
 
 // ── Umbrales (defaults sensatos; configurables por el admin más adelante) ──────
 const DIAS_REINTENTO = 3 // días desde el último contacto para volver a estar "pendiente"
-const DIAS_ENFRIANDO = 7 // un lead sin tocar tanto tiempo ya se está enfriando
 const UMBRAL_OP: Record<EstadoOportunidad, number> = {
   interesado: 4,
   reunion_coordinada: 3,
@@ -187,9 +186,12 @@ export function VendedorSeguimiento() {
   // Modal "Registrar contacto" (compartido con Buscar leads).
   const [llamado, setLlamado] = useState<Item | null>(null)
 
-  const { pendientes, pospuestos } = useMemo(() => {
+  const { pendientes, pospuestos, sinTocar } = useMemo(() => {
     const pend: Item[] = []
     const posp: Item[] = []
+    // Leads nunca contactados: NO se muestran acá (viven en "Buscar leads"); solo
+    // se cuentan para el recordatorio. Evita duplicar el primer toque en 2 pantallas.
+    let sinTocar = 0
 
     const telDeLead = (l: Lead): string | null => {
       const emp = l.cliente_id ? empresas[l.cliente_id] : undefined
@@ -239,10 +241,8 @@ export function VendedorSeguimiento() {
           detalle: importante ? "Importante y sin respuesta — conviene llamar." : `${l.contactos_intentos} intento(s) sin respuesta — reintentá.`,
           dias: d, pospuesto: false, proximo: null })
       } else {
-        const d = dias(l.created_at)
-        pend.push({ ...base, key: `l-${l.id}`, tipo: "sin_tocar", prioridad: importante ? 2 : d >= DIAS_ENFRIANDO ? 4 : 5,
-          detalle: d >= DIAS_ENFRIANDO ? "Enfriándose — hacé el primer contacto ya." : "Todavía sin contactar — primer toque.",
-          dias: d, pospuesto: false, proximo: null })
+        // Nunca contactado → se clasifica en "Buscar leads", no se duplica acá.
+        sinTocar++
       }
     }
 
@@ -280,7 +280,7 @@ export function VendedorSeguimiento() {
 
     pend.sort((a, b) => a.prioridad - b.prioridad || b.dias - a.dias)
     posp.sort((a, b) => (a.proximo ?? "").localeCompare(b.proximo ?? ""))
-    return { pendientes: pend, pospuestos: posp }
+    return { pendientes: pend, pospuestos: posp, sinTocar }
   }, [leads, ops, inscByLead, empresas, conteo, minContactos])
 
   const accionables = useMemo(() => pendientes.filter((i) => i.tipo !== "en_curso"), [pendientes])
@@ -414,7 +414,6 @@ export function VendedorSeguimiento() {
     { k: "respondio", label: "🔥 Te respondió" },
     { k: "op", label: "Oportunidad frenada" },
     { k: "contactado", label: "Contactado sin rta" },
-    { k: "sin_tocar", label: "Sin tocar" },
     { k: "en_curso", label: "En secuencia" },
     { k: "reciclar", label: "♻️ Para reciclar" },
     { k: "pospuesto", label: "⏰ Pospuestos" },
@@ -457,16 +456,49 @@ export function VendedorSeguimiento() {
       ) : (
         <>
           <GameBar racha={racha} hoy={hoyHechos} meta={META_DIARIA} salud={salud} cartera={cartera} />
+
+          {/* Recordatorio: leads nuevos sin contactar viven en Buscar leads (no se
+              duplican acá). Un click lleva a clasificarlos. */}
+          {sinTocar > 0 && (
+            <button
+              onClick={() => navigate("/leads")}
+              className="mt-4 flex w-full items-center gap-3 rounded-xl border border-blue/25 bg-[#EEF3FE] p-3.5 text-left transition-colors hover:bg-[#e2ebfd]"
+            >
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue/15">
+                <Sparkles size={19} className="text-blue" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[13.5px] font-semibold text-navy">
+                  Tenés {sinTocar} lead{sinTocar === 1 ? "" : "s"} sin contactar para clasificar
+                </div>
+                <div className="text-[12px] text-slate">
+                  Están en <b className="text-blue">Buscar leads</b>: dales el primer toque (o descartá) y pasan solos a seguimiento.
+                </div>
+              </div>
+              <span className="shrink-0 rounded-lg bg-blue px-3 py-1.5 text-[12.5px] font-semibold text-white">
+                Ir a clasificar →
+              </span>
+            </button>
+          )}
+
           {accionables.length === 0 && pospuestos.length === 0 ? (
             <Card className="mt-4 flex flex-col items-center p-10 text-center">
               <span className="grid size-14 place-items-center rounded-2xl bg-[#DFF2E9]">
                 <PartyPopper size={26} className="text-success" />
               </span>
-              <p className="mt-4 text-[16px] font-semibold text-navy">¡Bandeja en cero! 🎉</p>
+              <p className="mt-4 text-[16px] font-semibold text-navy">
+                {sinTocar > 0 ? "Seguimiento al día 🎉" : "¡Bandeja en cero! 🎉"}
+              </p>
               <p className="mx-auto mt-1 max-w-[48ch] text-[13px] text-slate">
-                No tenés seguimientos pendientes, todo al día.{" "}
-                {racha > 0 ? `Racha de ${racha} día${racha === 1 ? "" : "s"} 🔥 — no la cortes.` : "Sumá más desde"}{" "}
-                <Link to="/leads" className="font-medium text-blue underline">Buscar leads</Link>.
+                {sinTocar > 0 ? (
+                  <>Nada para gestionar por ahora. Clasificá tus leads nuevos ahí arriba 👆</>
+                ) : (
+                  <>
+                    No tenés seguimientos pendientes, todo al día.{" "}
+                    {racha > 0 ? `Racha de ${racha} día${racha === 1 ? "" : "s"} 🔥 — no la cortes.` : "Sumá más desde"}{" "}
+                    <Link to="/leads" className="font-medium text-blue underline">Buscar leads</Link>.
+                  </>
+                )}
               </p>
             </Card>
           ) : (
