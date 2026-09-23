@@ -731,6 +731,7 @@ function mapLead(r: any): Lead {
     campania: r.campania ?? null,
     oportunidad_id: r.oportunidad_id ?? null,
     proximo_contacto_at: r.proximo_contacto_at ?? null,
+    reciclado_at: r.reciclado_at ?? null,
     created_at: r.created_at,
   }
 }
@@ -1203,6 +1204,50 @@ export async function registrarContacto(opts: {
 
   // 4) Cuenta para la racha/meta del día.
   await sumarSeguimiento(opts.vendedorId).catch(() => {})
+}
+
+// Cuenta, por lead, los contactos SIN RESPUESTA desde `desdeISO` (para la regla
+// de reciclado). Si en la ventana hubo un contacto "interesado", el lead se
+// considera con avance y queda fuera (count 0).
+export async function fetchConteoContactosSinRespuesta(
+  leadIds: string[],
+  desdeISO: string
+): Promise<Record<string, number>> {
+  const unicos = [...new Set(leadIds.filter(Boolean))]
+  if (unicos.length === 0) return {}
+  const { data, error } = await supabase
+    .from("lead_contactos")
+    .select("lead_id, resultado")
+    .in("lead_id", unicos)
+    .gte("created_at", desdeISO)
+  if (error) throw new Error(error.message)
+  const cnt: Record<string, number> = {}
+  const conInteres = new Set<string>()
+  for (const r of (data ?? []) as any[]) {
+    if (!r.lead_id) continue
+    if (r.resultado === "interesado") conInteres.add(r.lead_id)
+    else cnt[r.lead_id] = (cnt[r.lead_id] ?? 0) + 1
+  }
+  for (const id of conInteres) delete cnt[id]
+  return cnt
+}
+
+// Recicla un lead frío: lo reagenda `meses` a futuro y reinicia el ciclo
+// (contactos_intentos = 0) para que vuelva a "Buscar leads" como intento nuevo
+// cuando llegue la fecha. El historial queda en lead_contactos.
+export async function reciclarLead(leadId: string, meses: number): Promise<void> {
+  const ahora = new Date()
+  const proximo = new Date(ahora.getTime() + meses * 30 * 86400000).toISOString()
+  const { error } = await supabase
+    .from("leads")
+    .update({
+      proximo_contacto_at: proximo,
+      contactos_intentos: 0,
+      reciclado_at: ahora.toISOString(),
+      updated_at: ahora.toISOString(),
+    })
+    .eq("id", leadId)
+  if (error) throw new Error(error.message)
 }
 
 // Edita el contacto de un lead. Registro único: el contacto (persona/email/

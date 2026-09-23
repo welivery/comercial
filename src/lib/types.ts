@@ -166,6 +166,7 @@ export interface Lead {
   campania: string | null // etiqueta de la campaña que le da prioridad (ej: "Entrega Domingo")
   oportunidad_id: string | null
   proximo_contacto_at: string | null // "volver a llamar" — pospone el ítem en Seguimiento
+  reciclado_at: string | null // se reagendó por falta de respuesta (intento nuevo)
   created_at: string
 }
 

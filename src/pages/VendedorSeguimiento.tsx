@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { AlarmClock, Ban, CheckCircle2, Flame, HeartPulse, MessageCircle, PartyPopper, Phone, Plus, Send, Sparkles } from "lucide-react"
+import { AlarmClock, Ban, CheckCircle2, Flame, HeartPulse, MessageCircle, PartyPopper, Phone, Plus, RefreshCw, Send, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
@@ -10,10 +10,11 @@ import { BucketChip, Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useOportunidades, useSecuencias, useSeguimientoDiario } from "@/hooks/useData"
-import { fetchEmpresasContacto, inscribir, rechazarLead } from "@/data/api"
+import { fetchConteoContactosSinRespuesta, fetchEmpresasContacto, inscribir, reciclarLead, rechazarLead } from "@/data/api"
 import type { DiaSeguimiento } from "@/data/api"
 import { msgError } from "@/lib/errors"
 import { telHref, waHref } from "@/lib/contacto"
+import { RECICLAR_MESES, RECICLAR_MIN_CONTACTOS, RECICLAR_VENTANA_DIAS } from "@/lib/funnel"
 import { ESTADO_LABEL, MOTIVOS_RECHAZO, fechaChile } from "@/lib/display"
 import { cn } from "@/lib/utils"
 import type { EstadoOportunidad, Lead, MotivoRechazo, Oportunidad, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
@@ -32,7 +33,7 @@ const UMBRAL_OP: Record<EstadoOportunidad, number> = {
 }
 
 type Tipo = "respondio" | "contactado" | "sin_tocar" | "op" | "en_curso"
-type Filtro = Tipo | "todos" | "pospuesto"
+type Filtro = Tipo | "todos" | "pospuesto" | "reciclar"
 
 const TIPO_META: Record<Tipo, { label: string; color: string; bg: string }> = {
   respondio: { label: "Te respondió", color: "#1E9E6A", bg: "#DFF2E9" },
@@ -60,6 +61,8 @@ interface Item {
   clienteId: string | null
   pospuesto: boolean
   proximo: string | null // fecha "volver a llamar", si está pospuesto
+  reciclar: boolean // sugerir reagendar/descartar (muchos contactos sin respuesta)
+  recientes: number // contactos sin respuesta en la ventana
 }
 
 function dias(iso?: string | null): number {
@@ -151,6 +154,22 @@ export function VendedorSeguimiento() {
     return () => { vivo = false }
   }, [clienteIdsKey])
 
+  // Conteo de contactos SIN respuesta por lead en la ventana de reciclado, para
+  // sugerir reagendar/descartar los fríos (regla configurable en F4).
+  const [conteo, setConteo] = useState<Record<string, number>>({})
+  const leadIdsKey = useMemo(
+    () => leads.filter((l) => l.estado === "nuevo").map((l) => l.id).sort().join(","),
+    [leads]
+  )
+  useEffect(() => {
+    const ids = leadIdsKey ? leadIdsKey.split(",") : []
+    if (ids.length === 0) { setConteo({}); return }
+    const desde = new Date(Date.now() - RECICLAR_VENTANA_DIAS * 86400000).toISOString()
+    let vivo = true
+    fetchConteoContactosSinRespuesta(ids, desde).then((m) => vivo && setConteo(m)).catch(() => {})
+    return () => { vivo = false }
+  }, [leadIdsKey])
+
   const [filtro, setFiltro] = useState<Filtro>("todos")
 
   // Modal "Rechazar / descartar" el lead.
@@ -185,7 +204,9 @@ export function VendedorSeguimiento() {
       const contacto = contactoDeLead(l)
       const importante =
         l.bucket === "estrategico" || l.bucket === "fulfillment" || l.reconquista || l.fit >= 70
-      const base = { origen: "lead" as const, lead: l, titulo: l.nombre, importante, telefono: tel, contacto, clienteId: l.cliente_id }
+      const recientes = conteo[l.id] ?? 0
+      const reciclar = recientes >= RECICLAR_MIN_CONTACTOS
+      const base = { origen: "lead" as const, lead: l, titulo: l.nombre, importante, telefono: tel, contacto, clienteId: l.cliente_id, reciclar, recientes }
 
       // Pospuesto ("volver a llamar" a futuro): fuera de pendientes hasta la fecha.
       if (pospuestoAun(l.proximo_contacto_at)) {
@@ -225,7 +246,7 @@ export function VendedorSeguimiento() {
       const emp = o.cliente_id ? empresas[o.cliente_id] : undefined
       const importante = o.bucket === "estrategico" || o.bucket === "fulfillment" || o.envios_aprox >= 500
       const base = { origen: "oportunidad" as const, op: o, titulo: o.ecommerce, importante,
-        telefono: emp?.telefono ?? null, contacto: emp?.contacto ?? null, clienteId: o.cliente_id }
+        telefono: emp?.telefono ?? null, contacto: emp?.contacto ?? null, clienteId: o.cliente_id, reciclar: false, recientes: 0 }
 
       if (pospuestoAun(o.proximo_contacto_at)) {
         posp.push({ ...base, key: `o-${o.id}`, tipo: "op", prioridad: 0,
@@ -254,20 +275,22 @@ export function VendedorSeguimiento() {
     pend.sort((a, b) => a.prioridad - b.prioridad || b.dias - a.dias)
     posp.sort((a, b) => (a.proximo ?? "").localeCompare(b.proximo ?? ""))
     return { pendientes: pend, pospuestos: posp }
-  }, [leads, ops, inscByLead, empresas])
+  }, [leads, ops, inscByLead, empresas, conteo])
 
   const accionables = useMemo(() => pendientes.filter((i) => i.tipo !== "en_curso"), [pendientes])
+  const paraReciclar = useMemo(() => pendientes.filter((i) => i.reciclar), [pendientes])
   const counts = useMemo(() => {
-    const c: Record<string, number> = { todos: accionables.length, pospuesto: pospuestos.length }
+    const c: Record<string, number> = { todos: accionables.length, pospuesto: pospuestos.length, reciclar: paraReciclar.length }
     for (const i of pendientes) c[i.tipo] = (c[i.tipo] ?? 0) + 1
     return c
-  }, [pendientes, accionables, pospuestos])
+  }, [pendientes, accionables, pospuestos, paraReciclar])
 
   const visibles = useMemo(() => {
     if (filtro === "pospuesto") return pospuestos
+    if (filtro === "reciclar") return paraReciclar
     if (filtro === "todos") return accionables
     return pendientes.filter((i) => i.tipo === filtro)
-  }, [filtro, accionables, pendientes, pospuestos])
+  }, [filtro, accionables, pendientes, pospuestos, paraReciclar])
 
   // ── Gamification ──
   const diario = useMemo(() => diarioData ?? [], [diarioData])
@@ -299,6 +322,34 @@ export function VendedorSeguimiento() {
       toast.error(msgError(err, "No se pudo rechazar"))
     } finally {
       setRechSaving(false)
+    }
+  }
+
+  // ── Reciclado de leads fríos ──
+  const [reciclando, setReciclando] = useState<string | null>(null)
+  async function reciclar(l: Lead, meses: number) {
+    setReciclando(l.id)
+    try {
+      await reciclarLead(l.id, meses)
+      reload()
+      toast.ok(`${l.nombre} reagendado ${meses} mes${meses === 1 ? "" : "es"}. Vuelve a Buscar leads en esa fecha.`)
+    } catch (e) {
+      toast.error(msgError(e, "No se pudo reagendar"))
+    } finally {
+      setReciclando(null)
+    }
+  }
+  async function noContactar(l: Lead, recientes: number) {
+    setReciclando(l.id)
+    try {
+      await rechazarLead(l.id, "no_contesta", `Sin respuesta tras ${recientes} contactos en ${RECICLAR_VENTANA_DIAS} días.`)
+      reload()
+      reloadDiario()
+      toast.ok(`${l.nombre} marcado como “no contactar”.`)
+    } catch (e) {
+      toast.error(msgError(e, "No se pudo descartar"))
+    } finally {
+      setReciclando(null)
     }
   }
 
@@ -359,6 +410,7 @@ export function VendedorSeguimiento() {
     { k: "contactado", label: "Contactado sin rta" },
     { k: "sin_tocar", label: "Sin tocar" },
     { k: "en_curso", label: "En secuencia" },
+    { k: "reciclar", label: "♻️ Para reciclar" },
     { k: "pospuesto", label: "⏰ Pospuestos" },
   ]
 
@@ -457,12 +509,15 @@ export function VendedorSeguimiento() {
                     key={it.key}
                     it={it}
                     siguiendo={siguiendo === it.lead?.id}
+                    reciclando={reciclando === it.lead?.id}
                     onLlamado={() => abrirLlamado(it)}
                     onOportunidad={() => it.lead && navigate(`/leads?convertir=${it.lead.id}`)}
                     onVerCharla={() => navigate("/secuencias")}
                     onSecuencia={() => it.lead && hacerSeguimiento(it.lead, it.tipo)}
                     onRechazar={() => it.lead && abrirRechazo(it.lead)}
                     onFicha={() => it.op && navigate(`/pipeline/${it.op.id}`)}
+                    onReciclar={(meses) => it.lead && reciclar(it.lead, meses)}
+                    onNoContactar={() => it.lead && noContactar(it.lead, it.recientes)}
                   />
                 ))}
                 {visibles.length === 0 && (
@@ -472,7 +527,9 @@ export function VendedorSeguimiento() {
                       ? "No hay nada corriendo en secuencia ahora."
                       : filtro === "pospuesto"
                         ? "No tenés seguimientos pospuestos."
-                        : "Nada en este filtro."}
+                        : filtro === "reciclar"
+                          ? "Nada para reciclar — ningún lead llegó al límite de contactos sin respuesta."
+                          : "Nada en este filtro."}
                   </Card>
                 )}
               </div>
@@ -568,21 +625,27 @@ export function VendedorSeguimiento() {
 function FilaSeguimiento({
   it,
   siguiendo,
+  reciclando,
   onLlamado,
   onOportunidad,
   onVerCharla,
   onSecuencia,
   onRechazar,
   onFicha,
+  onReciclar,
+  onNoContactar,
 }: {
   it: Item
   siguiendo: boolean
+  reciclando: boolean
   onLlamado: () => void
   onOportunidad: () => void
   onVerCharla: () => void
   onSecuencia: () => void
   onRechazar: () => void
   onFicha: () => void
+  onReciclar: (meses: number) => void
+  onNoContactar: () => void
 }) {
   const meta = TIPO_META[it.tipo]
   return (
@@ -590,7 +653,8 @@ function FilaSeguimiento({
       className={cn(
         "flex flex-wrap items-center gap-3 p-3.5",
         it.pospuesto && "opacity-80",
-        it.importante && it.tipo !== "en_curso" && !it.pospuesto && "ring-1 ring-coral/40"
+        it.reciclar && "ring-1 ring-[#E0A52F]/50",
+        it.importante && it.tipo !== "en_curso" && !it.pospuesto && !it.reciclar && "ring-1 ring-coral/40"
       )}
     >
       <VAvatar iniciales={(it.titulo || "—").slice(0, 2).toUpperCase()} />
@@ -687,6 +751,26 @@ function FilaSeguimiento({
           </>
         )}
       </div>
+
+      {/* Sugerencia de reciclado: muchos contactos sin respuesta */}
+      {it.reciclar && it.origen === "lead" && (
+        <div className="mt-1 flex w-full flex-wrap items-center gap-2 rounded-lg border border-[#E0A52F]/40 bg-[#FCF7EC] px-3 py-2">
+          <RefreshCw size={14} className="shrink-0 text-[#a5741a]" />
+          <span className="text-[12px] font-medium text-[#8a6416]">
+            {it.recientes} contactos sin respuesta en {RECICLAR_VENTANA_DIAS} días. ¿Reagendar o dejar de contactar?
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {RECICLAR_MESES.map((m) => (
+              <Button key={m} size="sm" variant="outline" disabled={reciclando} onClick={() => onReciclar(m)}>
+                Reagendar {m} {m === 1 ? "mes" : "meses"}
+              </Button>
+            ))}
+            <Button size="sm" variant="outline" className="text-error hover:bg-[#FBE2E2] hover:text-error" disabled={reciclando} onClick={onNoContactar}>
+              <Ban /> No contactar
+            </Button>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

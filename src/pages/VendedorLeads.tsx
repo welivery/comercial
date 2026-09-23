@@ -948,6 +948,14 @@ export function VendedorLeads() {
                                       {l.fit}% fit
                                     </span>
                                   ))}
+                                {l.estado === "nuevo" && l.reciclado_at && (
+                                  <span
+                                    title="Ya se trabajó antes; volvió tras reagendarse por falta de respuesta"
+                                    className="rounded-full bg-[#FCF7EC] px-1.5 py-0.5 text-[10.5px] font-semibold text-[#a5741a]"
+                                  >
+                                    ♻️ Reintento
+                                  </span>
+                                )}
                                 {l.estado === "rechazado" && l.motivo_rechazo && (
                                   <span className="rounded-full bg-mist px-1.5 py-0.5 text-[10.5px] font-semibold text-slate">
                                     {MOTIVO_RECHAZO_LABEL[l.motivo_rechazo]}
