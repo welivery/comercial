@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { AlarmClock, Ban, CheckCircle2, Flame, HeartPulse, MessageCircle, PartyPopper, Phone, PhoneOff, Plus, Send, Sparkles } from "lucide-react"
+import { AlarmClock, Ban, CheckCircle2, Flame, HeartPulse, MessageCircle, PartyPopper, Phone, Plus, Send, Sparkles } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Modal } from "@/components/Modal"
 import { PageHead } from "@/components/PageHead"
+import { RegistrarContacto, type ContactoTarget } from "@/components/RegistrarContacto"
 import { BucketChip, Cargando, ErrorMsg, VAvatar } from "@/components/widgets"
 import { useToast } from "@/components/Toast"
 import { useVentas } from "@/store"
 import { useInscripciones, useLeads, useOportunidades, useSecuencias, useSeguimientoDiario } from "@/hooks/useData"
-import { fetchEmpresasContacto, inscribir, registrarLlamado, rechazarLead } from "@/data/api"
-import type { DiaSeguimiento, ResultadoLlamado } from "@/data/api"
+import { fetchEmpresasContacto, inscribir, rechazarLead } from "@/data/api"
+import type { DiaSeguimiento } from "@/data/api"
 import { msgError } from "@/lib/errors"
+import { telHref, waHref } from "@/lib/contacto"
 import { ESTADO_LABEL, MOTIVOS_RECHAZO, fechaChile } from "@/lib/display"
 import { cn } from "@/lib/utils"
 import type { EstadoOportunidad, Lead, MotivoRechazo, Oportunidad, Secuencia, SecuenciaInscripcion, SecuenciaObjetivo } from "@/lib/types"
@@ -73,18 +75,6 @@ function extraerEmail(t?: string | null): string | null {
   const m = (t ?? "").match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/)
   return m ? m[0] : null
 }
-// Links de contacto directo. Los teléfonos son celulares chilenos (+56 9…).
-function telHref(t: string): string {
-  return "tel:" + t.replace(/[^\d+]/g, "")
-}
-function waHref(t: string): string {
-  let d = t.replace(/\D/g, "")
-  if (d.startsWith("56")) { /* ya trae país */ }
-  else if (d.length === 9 && d.startsWith("9")) d = "56" + d
-  else if (d.length === 8) d = "569" + d
-  else d = "56" + d
-  return `https://wa.me/${d}`
-}
 function fmtDiaCorto(iso: string): string {
   return new Date(iso).toLocaleDateString("es-CL", { day: "2-digit", month: "short" })
 }
@@ -120,13 +110,6 @@ function calcRacha(dias: DiaSeguimiento[], meta: number): number {
   }
   return racha
 }
-
-const SNOOZE_OPTS: { d: number; label: string }[] = [
-  { d: 0, label: "Sin posponer" },
-  { d: 1, label: "Mañana" },
-  { d: 3, label: "En 3 días" },
-  { d: 7, label: "En 7 días" },
-]
 
 export function VendedorSeguimiento() {
   const { vendedor, rol, vendedores, verVendedorId, setVerVendedorId, sinPerfil } = useVentas()
@@ -176,11 +159,8 @@ export function VendedorSeguimiento() {
   const [rechNota, setRechNota] = useState("")
   const [rechSaving, setRechSaving] = useState(false)
 
-  // Modal "Registré el llamado" (resultado + nota + posponer).
+  // Modal "Registrar contacto" (compartido con Buscar leads).
   const [llamado, setLlamado] = useState<Item | null>(null)
-  const [llNota, setLlNota] = useState("")
-  const [llSnooze, setLlSnooze] = useState(0)
-  const [llSaving, setLlSaving] = useState<ResultadoLlamado | null>(null)
 
   const { pendientes, pospuestos } = useMemo(() => {
     const pend: Item[] = []
@@ -355,39 +335,22 @@ export function VendedorSeguimiento() {
     }
   }
 
-  // ── Registro del llamado ──
+  // ── Registro de contacto ──
   function abrirLlamado(it: Item) {
     setLlamado(it)
-    setLlNota("")
-    setLlSnooze(0)
-    setLlSaving(null)
   }
-  async function guardarLlamado(resultado: ResultadoLlamado) {
-    if (!llamado) return
-    setLlSaving(resultado)
-    try {
-      await registrarLlamado({
+  // Objetivo para el modal compartido (lead u oportunidad).
+  const llamadoTarget: ContactoTarget | null = llamado
+    ? {
         origen: llamado.origen,
         id: llamado.lead?.id ?? llamado.op!.id,
-        vendedorId: vendedor.id,
         clienteId: llamado.clienteId,
-        resultado,
-        nota: llNota,
-        snoozeDias: llSnooze,
+        titulo: llamado.titulo,
+        contacto: llamado.contacto,
+        telefono: llamado.telefono,
         contactosPrevios: llamado.lead?.contactos_intentos ?? 0,
-      })
-      const nom = llamado.titulo
-      setLlamado(null)
-      reload()
-      reloadDiario()
-      toast.ok(
-        `Llamado registrado — ${nom}${llSnooze > 0 ? ` · vuelve ${SNOOZE_OPTS.find((s) => s.d === llSnooze)?.label.toLowerCase()}` : ""}.`
-      )
-    } catch (e) {
-      toast.error(msgError(e, "No se pudo registrar el llamado"))
-      setLlSaving(null)
-    }
-  }
+      }
+    : null
 
   const CHIPS: { k: Filtro; label: string }[] = [
     { k: "todos", label: "Todo pendiente" },
@@ -526,101 +489,36 @@ export function VendedorSeguimiento() {
         </>
       )}
 
-      {/* Modal: registrar el resultado del llamado */}
-      <Modal open={!!llamado} onClose={() => setLlamado(null)} title="Registrar llamado">
-        {llamado && (
-          <div className="flex flex-col gap-3.5">
-            <div className="flex items-center gap-2.5 rounded-lg bg-mist/70 px-3 py-2.5">
-              <VAvatar iniciales={(llamado.titulo || "—").slice(0, 2).toUpperCase()} />
-              <div className="min-w-0 flex-1">
-                <div className="text-[13.5px] font-semibold text-ink">{llamado.titulo}</div>
-                {llamado.contacto && <div className="text-[12px] text-slate">{llamado.contacto}</div>}
-              </div>
-            </div>
-
-            {llamado.telefono ? (
-              <div className="flex flex-wrap gap-2">
-                <a href={telHref(llamado.telefono)} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue px-3 py-2.5 text-[13px] font-semibold text-white hover:bg-blue/90">
-                  <Phone size={15} /> Llamar {llamado.telefono}
-                </a>
-                <a href={waHref(llamado.telefono)} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#25D366] px-3 py-2.5 text-[13px] font-semibold text-white hover:opacity-90">
-                  <MessageCircle size={15} /> WhatsApp
-                </a>
-              </div>
-            ) : (
-              <p className="rounded-lg bg-[#FCF3E2] px-3 py-2 text-[12px] text-[#8a6416]">
-                Sin teléfono cargado. Podés agregarlo en la ficha de la empresa (Base de clientes).
-              </p>
-            )}
-
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[12px] font-medium text-slate">¿Qué pasó? (nota, opcional)</span>
-              <textarea
-                value={llNota}
-                onChange={(e) => setLlNota(e.target.value)}
-                className="min-h-[64px] w-full resize-y rounded-lg border border-input px-3 py-2 text-[14px] text-ink outline-none focus:border-blue"
-                placeholder="Ej: quedó en confirmar el jueves · pidió propuesta por mail · no atiende…"
-              />
-            </label>
-
-            <div>
-              <div className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate">
-                <AlarmClock size={13} /> Volver a llamar
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {SNOOZE_OPTS.map((s) => (
-                  <button
-                    key={s.d}
-                    onClick={() => setLlSnooze(s.d)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-[12px] font-medium transition-colors",
-                      llSnooze === s.d ? "border-navy bg-navy text-white" : "border-border bg-white text-slate hover:text-ink"
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Resultado del llamado */}
-            <div className="mt-1 grid grid-cols-2 gap-2">
-              <Button variant="outline" disabled={!!llSaving} onClick={() => guardarLlamado("no_atendio")}>
-                <PhoneOff /> {llSaving === "no_atendio" ? "Guardando…" : "No atendió"}
-              </Button>
-              <Button variant="blue" disabled={!!llSaving} onClick={() => guardarLlamado("hablado")}>
-                <Phone /> {llSaving === "hablado" ? "Guardando…" : "Hablé"}
-              </Button>
-            </div>
-
-            {/* Próximo paso (delegado a los flujos existentes) */}
-            <div className="border-t border-border pt-3">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate">Próximo paso</div>
-              <div className="flex flex-wrap gap-2">
-                {llamado.origen === "lead" ? (
-                  <>
-                    <Button size="sm" variant="blue" onClick={() => { const l = llamado.lead!; setLlamado(null); navigate(`/leads?convertir=${l.id}`) }}>
-                      <Plus /> A oportunidad
-                    </Button>
-                    {(llamado.tipo === "sin_tocar" || llamado.tipo === "contactado") && (
-                      <Button size="sm" variant="outline" disabled={siguiendo === llamado.lead?.id} onClick={() => { const l = llamado.lead!; const t = llamado.tipo; setLlamado(null); hacerSeguimiento(l, t) }}>
-                        <Send /> Poner en secuencia
-                      </Button>
-                    )}
-                    <Button size="sm" variant="outline" className="text-error hover:bg-[#FBE2E2] hover:text-error" onClick={() => { const l = llamado.lead!; setLlamado(null); abrirRechazo(l) }}>
-                      <Ban /> No le interesa
-                    </Button>
-                  </>
-                ) : (
-                  <Button size="sm" variant="blue" onClick={() => { const o = llamado.op!; setLlamado(null); navigate(`/pipeline/${o.id}`) }}>
-                    Abrir ficha
+      {/* Modal: registrar contacto (compartido con Buscar leads) */}
+      <RegistrarContacto
+        target={llamadoTarget}
+        vendedorId={vendedor.id}
+        onClose={() => setLlamado(null)}
+        onRegistrado={() => { reload(); reloadDiario() }}
+        extra={
+          llamado ? (
+            llamado.origen === "lead" ? (
+              <>
+                <Button size="sm" variant="blue" onClick={() => { const l = llamado.lead!; setLlamado(null); navigate(`/leads?convertir=${l.id}`) }}>
+                  <Plus /> A oportunidad
+                </Button>
+                {(llamado.tipo === "sin_tocar" || llamado.tipo === "contactado") && (
+                  <Button size="sm" variant="outline" disabled={siguiendo === llamado.lead?.id} onClick={() => { const l = llamado.lead!; const t = llamado.tipo; setLlamado(null); hacerSeguimiento(l, t) }}>
+                    <Send /> Poner en secuencia
                   </Button>
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+                <Button size="sm" variant="outline" className="text-error hover:bg-[#FBE2E2] hover:text-error" onClick={() => { const l = llamado.lead!; setLlamado(null); abrirRechazo(l) }}>
+                  <Ban /> No le interesa
+                </Button>
+              </>
+            ) : (
+              <Button size="sm" variant="blue" onClick={() => { const o = llamado.op!; setLlamado(null); navigate(`/pipeline/${o.id}`) }}>
+                Abrir ficha
+              </Button>
+            )
+          ) : null
+        }
+      />
 
       {/* Modal: rechazar / descartar el lead con motivo */}
       <Modal open={!!rechLead} onClose={() => setRechLead(null)} title="Rechazar lead">

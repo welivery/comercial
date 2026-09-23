@@ -169,6 +169,22 @@ export interface Lead {
   created_at: string
 }
 
+// Historial de contactos de prospección (tabla lead_contactos).
+export type TipoContacto = "llamada" | "whatsapp" | "email" | "reunion" | "otro"
+// "sin respuesta / sin avance" = no_atendio | dejo_mensaje | hable · "avance" = interesado
+export type ResultadoContacto = "no_atendio" | "dejo_mensaje" | "hable" | "interesado"
+export interface LeadContacto {
+  id: string
+  lead_id: string | null
+  oportunidad_id: string | null
+  cliente_id: string | null
+  vendedor_id: string | null
+  tipo: TipoContacto
+  resultado: ResultadoContacto
+  nota: string | null
+  created_at: string
+}
+
 // Créditos de búsqueda con IA (por vendedor y mes).
 export interface CreditosLeads {
   limite: number

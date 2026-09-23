@@ -33,11 +33,11 @@ import {
   fetchCliente,
   inscribir,
   limpiarContacto,
-  marcarContactado,
   reactivarLead,
   rechazarLead,
   sembrarLeadsBase,
 } from "@/data/api"
+import { RegistrarContacto } from "@/components/RegistrarContacto"
 import { generarLeadsIA } from "@/data/leads"
 import { useToast } from "@/components/Toast"
 import { msgError } from "@/lib/errors"
@@ -195,6 +195,9 @@ export function VendedorLeads() {
 
   // Modal "Detalle" del lead (ver toda la info sin cortes).
   const [detalleLead, setDetalleLead] = useState<Lead | null>(null)
+
+  // Modal "Registrar contacto" (compartido con Seguimiento).
+  const [contactoLead, setContactoLead] = useState<Lead | null>(null)
 
   // Modal "Editar datos" del lead (persona, email, teléfono, web).
   const [editLead, setEditLead] = useState<Lead | null>(null)
@@ -432,19 +435,6 @@ export function VendedorLeads() {
       setEditErr(msgError(err, "No se pudieron guardar los datos"))
     } finally {
       setEditSaving(false)
-    }
-  }
-
-  async function contactarSinRta(l: Lead) {
-    try {
-      const n = await marcarContactado(l.id, l.contactos_intentos)
-      reload()
-      setAviso({
-        tipo: "info",
-        texto: `${l.nombre}: contacto ${n === 1 ? "registrado" : `×${n}`} sin respuesta. Queda para reintentar (filtro “Contactados”).`,
-      })
-    } catch (e) {
-      setAviso({ tipo: "error", texto: msgError(e, "No se pudo registrar el contacto") })
     }
   }
 
@@ -1077,11 +1067,11 @@ export function VendedorLeads() {
                                 <IconBtn
                                   title={
                                     l.contactos_intentos > 0
-                                      ? `Registrar otro intento (van ${l.contactos_intentos})`
-                                      : "Marcar contactado sin respuesta"
+                                      ? `Registrar contacto (van ${l.contactos_intentos})`
+                                      : "Registrar contacto (llamada, WhatsApp…)"
                                   }
                                   tone={l.contactos_intentos > 0 ? "amber" : undefined}
-                                  onClick={() => contactarSinRta(l)}
+                                  onClick={() => setContactoLead(l)}
                                 >
                                   <PhoneOutgoing size={15} />
                                 </IconBtn>
@@ -1114,6 +1104,41 @@ export function VendedorLeads() {
           )}
         </>
       )}
+
+      {/* Modal: registrar contacto (compartido con Seguimiento) */}
+      <RegistrarContacto
+        target={
+          contactoLead
+            ? {
+                origen: "lead",
+                id: contactoLead.id,
+                clienteId: contactoLead.cliente_id,
+                titulo: contactoLead.nombre,
+                contacto: contactoDe(contactoLead),
+                telefono: telDe(contactoLead),
+                contactosPrevios: contactoLead.contactos_intentos,
+              }
+            : null
+        }
+        vendedorId={vendedor.id}
+        onClose={() => setContactoLead(null)}
+        onRegistrado={() => reload()}
+        extra={
+          contactoLead ? (
+            <>
+              <Button size="sm" variant="blue" onClick={() => { const l = contactoLead; setContactoLead(null); abrirConvertir(l) }}>
+                <Plus /> A oportunidad
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => { const l = contactoLead; setContactoLead(null); abrirSecuencia(l) }}>
+                <Send /> Poner en secuencia
+              </Button>
+              <Button size="sm" variant="outline" className="text-error hover:bg-[#FBE2E2] hover:text-error" onClick={() => { const l = contactoLead; setContactoLead(null); setRechId(l.id); setRechMotivo("no_interesado"); setRechNota("") }}>
+                <Ban /> No le interesa
+              </Button>
+            </>
+          ) : null
+        }
+      />
 
       {/* Modal: pasar a oportunidad */}
       <Modal open={!!convLead} onClose={() => setConvLead(null)} title="Pasar lead a oportunidad">

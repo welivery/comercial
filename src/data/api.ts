@@ -14,9 +14,12 @@ import type {
   IaAutonomia,
   EstadoOportunidad,
   Lead,
+  LeadContacto,
   LeadEstado,
   MotivoBaja,
   MotivoRechazo,
+  ResultadoContacto,
+  TipoContacto,
   InscripcionEstado,
   Objetivo,
   Oportunidad,
@@ -1116,19 +1119,39 @@ async function agregarNotaEmpresa(clienteId: string, linea: string): Promise<voi
   await supabase.from("clientes").update({ nota: nueva }).eq("id", clienteId)
 }
 
-// Registra el resultado de un llamado de Seguimiento (lead u oportunidad):
-// - "no_atendio": suma un intento (en leads) y queda para reintentar.
-// - "hablado": deja constancia del contacto.
-// La nota (y una línea con el resultado) se guardan en la EMPRESA (registro
-// único). snoozeDias > 0 pospone el ítem (proximo_contacto_at). Siempre suma a
-// la racha/meta del día.
-export type ResultadoLlamado = "no_atendio" | "hablado"
-export async function registrarLlamado(opts: {
+export const TIPO_CONTACTO_LABEL: Record<TipoContacto, string> = {
+  llamada: "Llamada", whatsapp: "WhatsApp", email: "Email", reunion: "Reunión", otro: "Contacto",
+}
+export const TIPO_CONTACTO_EMOJI: Record<TipoContacto, string> = {
+  llamada: "📞", whatsapp: "💬", email: "✉️", reunion: "🤝", otro: "•",
+}
+export const RESULTADO_CONTACTO_LABEL: Record<ResultadoContacto, string> = {
+  no_atendio: "no atendió", dejo_mensaje: "dejé mensaje", hable: "hablé", interesado: "interesado",
+}
+
+// Historial de contactos de un lead u oportunidad (más reciente primero).
+export async function fetchContactos(target: { origen: "lead" | "oportunidad"; id: string }): Promise<LeadContacto[]> {
+  const col = target.origen === "lead" ? "lead_id" : "oportunidad_id"
+  const { data, error } = await supabase
+    .from("lead_contactos")
+    .select("*")
+    .eq(col, target.id)
+    .order("created_at", { ascending: false })
+  if (error) throw new Error(error.message)
+  return (data ?? []) as LeadContacto[]
+}
+
+// Registra un contacto de prospección (lead u oportunidad). Guarda el historial
+// en lead_contactos (fuente de verdad), actualiza contadores + snooze en el
+// lead/oportunidad, deja una línea legible en la nota de la EMPRESA (registro
+// único) y suma a la racha/meta del día. snoozeDias > 0 pospone el ítem.
+export async function registrarContacto(opts: {
   origen: "lead" | "oportunidad"
   id: string
   vendedorId: string
   clienteId: string | null
-  resultado: ResultadoLlamado
+  tipo: TipoContacto
+  resultado: ResultadoContacto
   nota?: string
   snoozeDias?: number
   contactosPrevios?: number
@@ -1138,7 +1161,20 @@ export async function registrarLlamado(opts: {
     opts.snoozeDias && opts.snoozeDias > 0
       ? new Date(ahora.getTime() + opts.snoozeDias * 86400000).toISOString()
       : null
+  const nota = (opts.nota ?? "").trim()
 
+  // 1) Historial (fuente de verdad).
+  await supabase.from("lead_contactos").insert({
+    lead_id: opts.origen === "lead" ? opts.id : null,
+    oportunidad_id: opts.origen === "oportunidad" ? opts.id : null,
+    cliente_id: opts.clienteId,
+    vendedor_id: opts.vendedorId,
+    tipo: opts.tipo,
+    resultado: opts.resultado,
+    nota: nota || null,
+  })
+
+  // 2) Contadores + snooze.
   if (opts.origen === "lead") {
     const { error } = await supabase
       .from("leads")
@@ -1158,14 +1194,14 @@ export async function registrarLlamado(opts: {
     if (error) throw new Error(error.message)
   }
 
+  // 3) Rastro legible en la empresa (registro único).
   if (opts.clienteId) {
     const fecha = ahora.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric" })
-    const nota = (opts.nota ?? "").trim()
-    const etiqueta = opts.resultado === "no_atendio" ? "no atendió" : "hablé"
-    const linea = `📞 ${fecha} · Llamado (${etiqueta})${nota ? `: ${nota}` : ""}`
+    const linea = `${TIPO_CONTACTO_EMOJI[opts.tipo]} ${fecha} · ${TIPO_CONTACTO_LABEL[opts.tipo]} (${RESULTADO_CONTACTO_LABEL[opts.resultado]})${nota ? `: ${nota}` : ""}`
     await agregarNotaEmpresa(opts.clienteId, linea).catch(() => {})
   }
 
+  // 4) Cuenta para la racha/meta del día.
   await sumarSeguimiento(opts.vendedorId).catch(() => {})
 }
 

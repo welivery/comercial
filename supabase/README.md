@@ -96,6 +96,8 @@ Correr en este orden si todavía no se corrieron. Salvo aviso, son **solo SQL**
     propias oportunidades (habilita el botón "Eliminar" del detalle). Solo SQL.
 27. `seguimiento-proximo-contacto.sql` — columna `proximo_contacto_at` en leads y
     oportunidades para "volver a llamar en X días" (posponer) en Seguimiento. Solo SQL.
+28. `lead-contactos.sql` — tabla `lead_contactos` (historial de contactos:
+    tipo/resultado/nota) + RLS. Base del funnel Buscar leads → Seguimiento. Solo SQL.
 
 **Verificación:** `verificar-seguridad.sql` — consulta de solo lectura para
 confirmar que el endurecimiento de `seguridad.sql` quedó aplicado. Correr por país.
